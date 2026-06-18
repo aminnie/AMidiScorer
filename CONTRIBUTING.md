@@ -21,12 +21,20 @@ Keep pull requests small and focused. Preferred examples:
 
 Avoid mixing unrelated subsystems in one PR (for example, timing model + UI drawing + chord templates all at once).
 
+Recent feature areas to keep isolated in PRs:
+
+- multi-staff selection/clef UI
+- chord-track checkbox source selection
+- live eighth-note chord marker behavior
+- rest insertion and rendering
+
 ## Core architecture guardrails
 
 - `TempoMap` is the timing source of truth.
 - `PlaybackController` is the playback/bar source of truth.
 - `ScoreRenderer` should remain visual-only (no timing or harmonic logic decisions).
 - `ChordDetector` should own chord matching and naming policy.
+- `MainComponent` should orchestrate UI state and trigger score rebuilds.
 
 ## Testing expectations
 
@@ -34,7 +42,9 @@ For changes in:
 
 - `src/midi/TempoMap.h`: add/adjust deterministic timing tests.
 - `src/notation/Quantizer.h`: add quantization behavior checks.
+- `src/notation/ScoreModel.h`: add or adjust gap/rest insertion behavior checks.
 - `src/harmony/ChordDetector.h`: add chord match and naming-option checks.
+- `src/app/MainComponent.h`: include manual playback smoke coverage for timer/live marker behavior.
 
 At minimum before submitting:
 
@@ -42,9 +52,14 @@ At minimum before submitting:
 2. Run `ctest` with zero failures.
 3. Smoke test in app:
    - load MIDI
-   - switch track
+   - verify auto-preset load behavior
+   - switch staff tracks and clefs
+   - toggle chord-track checkboxes
    - verify chord naming preference toggles
+   - verify light/dark score toggle
    - verify rolling bar playback updates
+   - verify live chord marker changes only when chord changes
+   - verify Stop pre-fills Continue bar and Continue resumes correctly
 
 ## PR checklist
 

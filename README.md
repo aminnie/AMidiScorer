@@ -1,44 +1,49 @@
 # MidiScorer
 
-MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders a selected track as score-like notation, detects chords, and follows playback with a rolling 5-bar view.
+MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders up to three selected tracks as score-like notation, detects chords, and follows playback with a rolling 5-bar view.
 
-## Current v1 capabilities
+## Current capabilities
 
 - Load `.mid` / `.midi` files.
-- Select one MIDI track for analysis and display.
-- Build tempo and time-signature maps from MIDI meta events.
+- Auto-load last saved UI preset when a MIDI file is loaded (if present).
+- Display up to three independent staffs:
+  - per-staff track selection
+  - per-staff clef selection (`Treble` / `Bass`)
+- Build tempo, time-signature, and key-signature maps from MIDI meta events.
 - Quantize note starts and durations to:
   - 1/16, 1/8, 1/4, 1/2, whole
-- Render a score-style staff view with:
-  - bar headers and beat guides
-  - noteheads, stems, flags, tie hinting
-  - basic accidental and ledger-line cues
-- Detect and display chords above the score:
-  - triads, sevenths, extensions/alterations, slash bass forms
-- Chord naming options:
-  - sharp vs flat root names
-  - plain vs jazz alias text
-- Chord source options:
-  - selected track only
-  - first 5 tracks (default)
-- Playback-synced rolling window:
-  - previous 2 bars + current bar + next 2 bars
+- Render score-style notation with:
+  - noteheads, stems, flags, ties
+  - key-aware accidental display (`#`/`b` preference by key signature)
+  - explicit rest symbols (gaps are modeled and rendered as rests)
+- Detect/display chords:
+  - static bar chord label (left-aligned)
+  - live chord marker recomputed on 1/8-note boundaries, shown only when chord changes
+- Chord source selection:
+  - dynamic per-track checkbox list (`Chord Tracks`) used for harmonic analysis
+- Playback controls:
+  - `Play`, `Stop`, `Continue`, and bar start input
+  - on `Stop`, continue bar auto-fills with current bar
+- Display options:
+  - `Light Score` / dark score toggle (Light Score is default)
+  - status line includes Sig, Tempo, Key, and Bar
+- Window title includes loaded MIDI filename.
 
 ## Project structure
 
 - `CMakeLists.txt` - JUCE/CMake project setup
 - `Main.cpp` - JUCE application entry point
-- `src/app/MainComponent.h` - UI controls, file load flow, orchestration
-- `src/midi/TempoMap.h` - tempo/time-signature and bar mapping
+- `src/app/MainComponent.h` - UI controls, orchestration, playback updates
+- `src/midi/TempoMap.h` - tempo/time-signature/bar conversion
 - `src/midi/TrackNoteExtractor.h` - note-on/note-off pairing
-- `src/midi/MidiProjectLoader.h` - MIDI ingestion into app model
-- `src/notation/Quantizer.h` - rhythmic quantization to v1 note values
-- `src/notation/ScoreModel.h` - score/bar/chord model
-- `src/notation/ScoreRenderer.h` - score drawing
+- `src/midi/MidiProjectLoader.h` - MIDI ingestion and metadata extraction
+- `src/notation/Quantizer.h` - rhythmic quantization
+- `src/notation/ScoreModel.h` - score bars/notes/chords/rest insertion
+- `src/notation/ScoreRenderer.h` - score drawing and live chord marker rendering
 - `src/harmony/ChordDetector.h` - chord analysis and naming options
-- `src/playback/PlaybackClock.h` - playback timing
+- `src/playback/PlaybackClock.h` - playback timing core
 - `src/playback/PlaybackController.h` - playback state + current bar
-- `tests/test_main.cpp` - lightweight core tests
+- `tests/test_main.cpp` - core tests
 - `tests/fixtures/` - fixture specs/documentation
 
 ## Requirements
@@ -72,97 +77,47 @@ ctest --test-dir build -C Debug --output-on-failure
 
 1. Launch `MidiScorer`.
 2. Click **Load MIDI** and choose a MIDI file.
-3. Select a track from the **Track** dropdown.
-4. Optionally choose chord naming preferences:
-   - accidental style (sharp/flat)
-   - alias style (plain/jazz)
-5. Choose chord analysis source:
-   - selected track
-   - first 5 tracks
-6. Click **Play** to follow the rolling 5-bar score.
-7. Click **Stop** to stop playback.
+3. Optionally let auto-preset apply, or use **Load Preset** manually.
+4. Configure Staff 1/2/3 track and clef.
+5. Choose harmonic source tracks using **Chord Tracks** checkboxes.
+6. Optionally adjust:
+   - global transpose
+   - chord naming options
+   - score color mode
+7. Click **Play**.
+8. Click **Stop** (Continue bar auto-populates current bar).
+9. Click **Continue** to resume from selected bar.
 
-## Notes and known limitations (v1)
+## Notes and known limitations
 
-- Rendering is intentionally simplified (single-voice style).
-- Quantization is restricted to 1/16 through whole note values.
-- Rests, beaming, and accidentals are heuristic, not full engraving rules.
-- Chord detection uses deterministic template scoring and can be ambiguous for dense voicings.
-- Playback currently drives visual sync; MIDI audio output routing is not implemented as a full DAW transport.
+- Rendering is intentionally simplified (single-voice approximation per staff).
+- Quantization is limited to 1/16 through whole-note values.
+- Rests, beaming, and accidental handling are practical approximations, not full engraving rules.
+- Chord detection uses deterministic template scoring and may be ambiguous for dense voicings.
+- Playback currently drives visual sync; MIDI output transport/routing is not DAW-grade.
 
-## Roadmap ideas
-
-- Improved engraving rules (meter-aware beaming, richer rest logic, key-aware accidentals)
-- More advanced chord preference/profile settings
-- Optional piano-roll overlay
-- Export score snapshots or MusicXML bridge
-
-## Developer Notes
+## Developer notes
 
 - `MIDI ingest pipeline`
   - Entry point is `MidiProjectLoader::load()` in `src/midi/MidiProjectLoader.h`.
-  - This is where file parse, meta extraction, per-track note extraction, and project-level duration/bar bounds are assembled.
-  - Add new metadata extraction here first (markers, lyrics, key changes, etc.).
-
 - `Tempo/bar math`
   - `src/midi/TempoMap.h` is the authoritative timing layer.
-  - Extend this module if you need alternate transport domains (ticks-only, SMPTE, swing grids, custom bar math).
-  - Keep new conversions centralized here to avoid timing drift across renderer/chord logic/playback.
-
-- `Quantization extension points`
-  - `Quantizer::quantizeTrack()` in `src/notation/Quantizer.h` controls note onset/duration normalization.
-  - For tuplets or dotted values, add to `quantizeDuration()` + `quarterToValue()` and then update renderer symbol mapping.
-  - If you need style presets (strict vs humanized), add strategy options to quantizer input.
-
-- `Chord rules and naming`
-  - Harmonic matching lives in `ChordDetector` (`src/harmony/ChordDetector.h`).
-  - Add/adjust quality templates in `templates()`.
-  - Naming behavior is controlled via `NamingOptions` (accidental preference + alias style); this is the right place for custom user profiles.
-
+- `Chord detection`
+  - `src/harmony/ChordDetector.h` contains template matching and naming rules.
+  - `detectInWindow(...)` supports live playback window detection.
+- `Notation model`
+  - `src/notation/ScoreModel.h` inserts explicit rest symbols per bar by gap-filling occupied note spans.
 - `Notation rendering`
-  - `src/notation/ScoreRenderer.h` contains all drawing logic (staff, noteheads, stems, ties, beat guides, accidental cues, beam hints).
-  - Keep visual-only decisions here; do not move timing/harmony rules into renderer.
-  - For richer engraving, introduce a pre-render layout pass (collision avoidance, stem direction groups, rest placement) before direct draw calls.
-
-- `Playback sync and rolling window`
-  - `PlaybackClock` and `PlaybackController` (`src/playback/`) drive elapsed time and current bar.
-  - `MainComponent::timerCallback()` updates transport text and the rolling 5-bar center.
-  - If adding audio/MIDI output transport later, keep this controller as the single source of visual playhead truth.
-
-- `UI wiring and state orchestration`
-  - `src/app/MainComponent.h` coordinates file load, track selection, chord naming preferences, score rebuild, and transport controls.
-  - Any new user-facing preference should be wired to trigger `rebuildFromSelectedTrack()` or a dedicated incremental refresh path.
-
-- `Testing guidance`
-  - Core logic tests are in `tests/test_main.cpp`.
-  - Add regression tests for new tempo/time-signature edge cases and chord-template ambiguities first, then add UI-facing checks.
-  - Keep fixture definitions in `tests/fixtures/fixture-specs.md` deterministic and minimal.
+  - `src/notation/ScoreRenderer.h` handles static chord labels, live chord marker, notes, rests, and accidental display.
+- `UI orchestration`
+  - `src/app/MainComponent.h` coordinates all preferences, preset load/save, multi-staff rebuilds, and timer-based updates.
 
 ## First contribution checklist
 
-1. Configure and build locally:
-   - `cmake -S . -B build -DJUCE_ROOT="C:/JUCE"`
-   - `cmake --build build --config Debug --target MidiScorer MidiScorerTests`
-2. Run tests:
-   - `ctest --test-dir build -C Debug --output-on-failure`
-3. Launch app and smoke test:
-   - load a MIDI file
-   - switch tracks
-   - toggle chord naming preferences
-   - run Play/Stop and confirm rolling bar movement
-4. Read key files in order:
-   - `src/app/MainComponent.h`
-   - `src/midi/MidiProjectLoader.h`
-   - `src/midi/TempoMap.h`
-   - `src/notation/Quantizer.h`
-   - `src/notation/ScoreModel.h`
-   - `src/notation/ScoreRenderer.h`
-   - `src/harmony/ChordDetector.h`
-5. Pick one safe extension path:
-   - add a new chord template
-   - improve one quantizer rule
-   - add one renderer refinement with test coverage
-6. Keep refactors bounded:
-   - avoid mixing timing-model changes with drawing changes in the same PR
-   - update tests when touching `TempoMap`, `Quantizer`, or `ChordDetector`
-   - preserve `PlaybackController` as the source of playhead/bar truth
+1. Configure/build locally.
+2. Run `ctest` and ensure zero failures.
+3. Smoke test:
+   - load MIDI
+   - verify staff selectors and chord track checkboxes
+   - verify Play/Stop/Continue behavior
+   - verify live chord marker updates on playback
