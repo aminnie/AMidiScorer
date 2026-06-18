@@ -238,8 +238,9 @@ private:
         const auto chordText = bar.chords.empty() ? "-" : bar.chords.front().symbol;
         g.setColour(chordColour);
         g.setFont(14.0f);
-        g.drawText(chordText, juce::Rectangle<int>(staffRect.getX(), chordTop, staffRect.getWidth(), 20),
-                   juce::Justification::centred);
+        g.drawText(chordText,
+                   juce::Rectangle<int>(staffRect.getX() + 6, chordTop, staffRect.getWidth() - 12, 20),
+                   juce::Justification::centredLeft);
 
         g.setColour(staffLineColour);
         const int lineSpacing = 11;
@@ -260,7 +261,7 @@ private:
             const float markerX = left + static_cast<float>((clampedQuarter / juce::jmax(0.25, qPerBar)) * width);
             const int textWidth = 84;
             const int textX = juce::jlimit(staffRect.getX(), staffRect.getRight() - textWidth, static_cast<int>(markerX) - textWidth / 2);
-            const int textY = chordTop + 2;
+            const int textY = chordTop + 18;
             g.setColour(colorScheme == ColorScheme::dark ? juce::Colours::lightgreen.withAlpha(0.95f)
                                                          : juce::Colour(0xff1f5c1f).withAlpha(0.95f));
             g.setFont(13.0f);
