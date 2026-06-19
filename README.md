@@ -10,14 +10,18 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Auto-load last saved UI preset when a MIDI file is loaded (if present).
 - Display up to three independent staffs:
   - per-staff track selection
-  - per-staff clef selection (`Treble` / `Bass`)
+  - per-staff clef selection (`Treble` / `Bass` / `Drum`)
 - Build tempo, time-signature, and key-signature maps from MIDI meta events.
 - Quantize note starts and durations to:
   - 1/16, 1/8, 1/4, 1/2, whole
 - Render score-style notation with:
   - noteheads, stems, flags, ties
   - key-aware accidental display (`#`/`b` preference by key signature)
-  - key-signature glyphs (up to 7 sharps/flats) rendered at the first visible bar on each staff
+  - first-visible-bar start symbols:
+    - enlarged clef glyphs (treble/bass)
+    - enlarged key-signature glyphs (up to 7 sharps/flats)
+  - per-measure top-right staff header text shows selected track/instrument name
+  - drum clef mode uses percussion-oriented note placement and x-noteheads for hat/cymbal hits
   - explicit rest symbols (gaps are modeled and rendered as rests)
 - Detect/display chords:
   - static bar chord label (left-aligned)
@@ -86,6 +90,7 @@ ctest --test-dir build -C Debug --output-on-failure
 2. Click **Load MIDI** and choose a MIDI file.
 3. Optionally let auto-preset apply, or use **Load Preset** manually.
 4. Configure Staff 1/2/3 track and clef.
+   - use `Drum` clef for percussion tracks
 5. Choose harmonic source tracks using **Chord Tracks** checkboxes.
 6. Optionally adjust:
    - global transpose
@@ -115,7 +120,7 @@ ctest --test-dir build -C Debug --output-on-failure
 - `Notation model`
   - `src/notation/ScoreModel.h` inserts explicit rest symbols per bar by gap-filling occupied note spans.
 - `Notation rendering`
-  - `src/notation/ScoreRenderer.h` handles static chord labels, live chord marker, notes, rests, accidental display, and first-visible-bar key signatures per staff.
+  - `src/notation/ScoreRenderer.h` handles static chord labels, live chord marker, notes/rests, per-staff instrument header labels, first-visible-bar clef/key symbols, and drum-mode note rendering.
 - `UI orchestration`
   - `src/app/MainComponent.h` coordinates all preferences, preset load/save, multi-staff rebuilds, and timer-based updates.
 

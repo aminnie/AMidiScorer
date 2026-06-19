@@ -11,7 +11,8 @@ public:
     enum class ClefType
     {
         treble,
-        bass
+        bass,
+        drum
     };
 
     enum class ColorScheme
@@ -60,6 +61,12 @@ public:
         repaint();
     }
 
+    void setStaffLabel(const juce::String& label)
+    {
+        staffLabel = label;
+        repaint();
+    }
+
     void paint(juce::Graphics& g) override
     {
         const bool isDark = colorScheme == ColorScheme::dark;
@@ -105,6 +112,9 @@ private:
 
     juce::String accidentalTextForMidi(int midiNote) const
     {
+        if (clefType == ClefType::drum)
+            return {};
+
         const int pc = (midiNote % 12 + 12) % 12;
         if (!isBlackKeyPitchClass(pc))
             return {};
@@ -133,10 +143,65 @@ private:
 
     static float staffYForMidi(int midiNote, const juce::Rectangle<int>& area, ClefType clefType)
     {
+        if (clefType == ClefType::drum)
+        {
+            // Practical GM-style mapping: kick low, snare center, cymbals high.
+            const float center = static_cast<float>(area.getCentreY());
+            const float lineSpacing = 11.0f;
+            switch (midiNote)
+            {
+                case 35: [[fallthrough]];
+                case 36: return center + lineSpacing * 1.5f; // kick
+                case 38: [[fallthrough]];
+                case 40: return center; // snare
+                case 41: [[fallthrough]];
+                case 43: return center + lineSpacing; // low tom
+                case 45: [[fallthrough]];
+                case 47: return center + lineSpacing * 0.5f; // mid tom
+                case 48: [[fallthrough]];
+                case 50: return center - lineSpacing * 0.5f; // high tom
+                case 42: [[fallthrough]];
+                case 44: return center - lineSpacing * 1.5f; // closed/pedal hat
+                case 46: return center - lineSpacing * 2.0f; // open hat
+                case 49: [[fallthrough]];
+                case 57: return center - lineSpacing * 2.5f; // crash
+                case 51: [[fallthrough]];
+                case 53: [[fallthrough]];
+                case 59: return center - lineSpacing * 2.2f; // ride
+                default:
+                {
+                    const float mapped = center - (static_cast<float>(midiNote) - 43.0f) * 2.2f;
+                    const float top = static_cast<float>(area.getCentreY() - 33);
+                    const float bottom = static_cast<float>(area.getCentreY() + 33);
+                    return juce::jlimit(top, bottom, mapped);
+                }
+            }
+        }
+
         const int referenceMidi = clefType == ClefType::bass ? 50 : 71;
         const float center = static_cast<float>(area.getCentreY());
         const float step = 4.0f;
         return center - (static_cast<float>(midiNote) - static_cast<float>(referenceMidi)) * step * 0.5f;
+    }
+
+    static bool isCymbalOrHatMidi(int midiNote)
+    {
+        switch (midiNote)
+        {
+            case 42: [[fallthrough]];
+            case 44: [[fallthrough]];
+            case 46: [[fallthrough]];
+            case 49: [[fallthrough]];
+            case 51: [[fallthrough]];
+            case 52: [[fallthrough]];
+            case 53: [[fallthrough]];
+            case 55: [[fallthrough]];
+            case 57: [[fallthrough]];
+            case 59:
+                return true;
+            default:
+                return false;
+        }
     }
 
     static float durationWidth(NoteValue value)
@@ -200,10 +265,43 @@ private:
             return 0;
 
         const int symbolCount = juce::jlimit(0, 7, std::abs(sharpsOrFlats));
-        return 8 + symbolCount * 9;
+        return 16 + symbolCount * 18;
     }
 
-    void drawKeySignature(juce::Graphics& g, const juce::Rectangle<int>& staffRect, int reserveWidth, juce::Colour colour) const
+    static int clefReserveWidth(ClefType type)
+    {
+        if (type == ClefType::treble)
+            return 48;
+        if (type == ClefType::bass)
+            return 40;
+        return 0;
+    }
+
+    void drawClefSymbol(juce::Graphics& g, const juce::Rectangle<int>& staffRect, int reserveWidth, juce::Colour colour) const
+    {
+        if (reserveWidth <= 0)
+            return;
+
+        juce::String symbol;
+        if (clefType == ClefType::treble)
+            symbol = juce::String::charToString(static_cast<juce_wchar>(0x1D11E)); // G clef
+        else if (clefType == ClefType::bass)
+            symbol = juce::String::charToString(static_cast<juce_wchar>(0x1D122)); // F clef
+        else
+            return;
+
+        g.setColour(colour);
+        g.setFont(52.0f);
+        g.drawText(symbol,
+                   juce::Rectangle<int>(staffRect.getX() + 2, staffRect.getY() - 16, reserveWidth, staffRect.getHeight() + 22),
+                   juce::Justification::centredLeft);
+    }
+
+    void drawKeySignature(juce::Graphics& g,
+                          const juce::Rectangle<int>& staffRect,
+                          int xOffset,
+                          int reserveWidth,
+                          juce::Colour colour) const
     {
         if (!hasKeySignature || keySharpsOrFlats == 0 || reserveWidth <= 0)
             return;
@@ -226,14 +324,14 @@ private:
         const auto symbol = isSharp ? "#" : "b";
 
         g.setColour(colour);
-        g.setFont(13.0f);
-        int x = staffRect.getX() + 10;
-        const int maxX = staffRect.getX() + reserveWidth;
+        g.setFont(26.0f);
+        int x = staffRect.getX() + xOffset + 8;
+        const int maxX = staffRect.getX() + xOffset + reserveWidth;
         for (int i = 0; i < symbolCount; ++i)
         {
-            const int y = centerY - offsets[(size_t) i] * halfStep - 8;
-            g.drawText(symbol, juce::Rectangle<int>(x, y, 10, 16), juce::Justification::centred);
-            x += 9;
+            const int y = centerY - offsets[(size_t) i] * halfStep - 16;
+            g.drawText(symbol, juce::Rectangle<int>(x, y, 20, 32), juce::Justification::centred);
+            x += 18;
             if (x > maxX)
                 break;
         }
@@ -273,7 +371,10 @@ private:
         const int staffTop = barRect.getY() + 44;
         const int staffHeight = barRect.getHeight() - 58;
         juce::Rectangle<int> staffRect(barRect.getX() + 6, staffTop, barRect.getWidth() - 12, staffHeight);
-        const int keySigWidth = isFirstVisibleBar ? keySignatureReserveWidth(hasKeySignature, keySharpsOrFlats) : 0;
+        const bool isDrumStaff = clefType == ClefType::drum;
+        const bool showStartSymbols = isFirstVisibleBar && !isDrumStaff;
+        const int clefWidth = showStartSymbols ? clefReserveWidth(clefType) : 0;
+        const int keySigWidth = showStartSymbols ? keySignatureReserveWidth(hasKeySignature, keySharpsOrFlats) : 0;
 
         auto barHeader = barRect;
         barHeader = barHeader.removeFromTop(18);
@@ -284,7 +385,11 @@ private:
         auto clefTextArea = barHeader.removeFromRight(84);
         clefTextArea = clefTextArea.withTrimmedRight(6);
         g.drawText("Bar " + juce::String(bar.barNumber), barTextArea, juce::Justification::centredLeft);
-        g.drawText(clefType == ClefType::bass ? "Bass" : "Treble", clefTextArea, juce::Justification::centredRight);
+        auto headerLabel = staffLabel.trim();
+        if (headerLabel.isEmpty())
+            headerLabel = clefType == ClefType::bass ? "Bass"
+                        : (clefType == ClefType::drum ? "Drum" : "Treble");
+        g.drawText(headerLabel, clefTextArea, juce::Justification::centredRight);
 
         const auto chordText = bar.chords.empty() ? "-" : bar.chords.front().symbol;
         g.setColour(chordColour);
@@ -301,12 +406,15 @@ private:
             g.drawLine((float) staffRect.getX(), (float) y, (float) staffRect.getRight(), (float) y, 1.0f);
         }
 
+        if (clefWidth > 0)
+            drawClefSymbol(g, staffRect, clefWidth, noteColour);
         if (keySigWidth > 0)
-            drawKeySignature(g, staffRect, keySigWidth, noteColour);
+            drawKeySignature(g, staffRect, clefWidth, keySigWidth, noteColour);
 
         const double qPerBar = static_cast<double>(bar.numerator) * 4.0 / static_cast<double>(bar.denominator);
-        const float left = static_cast<float>(staffRect.getX() + 6 + keySigWidth);
-        const float width = static_cast<float>(juce::jmax(20, staffRect.getWidth() - 12 - keySigWidth));
+        const int startSymbolWidth = clefWidth + keySigWidth;
+        const float left = static_cast<float>(staffRect.getX() + 6 + startSymbolWidth);
+        const float width = static_cast<float>(juce::jmax(20, staffRect.getWidth() - 12 - startSymbolWidth));
         const int beatCount = juce::jmax(1, bar.numerator);
 
         if (liveChordVisible && bar.barNumber == liveChordBarNumber && liveChordText.isNotEmpty())
@@ -347,8 +455,22 @@ private:
             const float h = 7.0f;
 
             g.setColour(noteColour);
-            drawLedgerLines(g, staffRect, x + w * 0.5f, y);
-            g.fillEllipse(x, y - h * 0.5f, w, h);
+            if (!isDrumStaff)
+            {
+                drawLedgerLines(g, staffRect, x + w * 0.5f, y);
+                g.fillEllipse(x, y - h * 0.5f, w, h);
+            }
+            else if (isCymbalOrHatMidi(note.midiNote))
+            {
+                const float cx = x + w * 0.5f;
+                const float r = 3.2f;
+                g.drawLine(cx - r, y - r, cx + r, y + r, 1.4f);
+                g.drawLine(cx - r, y + r, cx + r, y - r, 1.4f);
+            }
+            else
+            {
+                g.fillEllipse(x, y - h * 0.5f, w, h);
+            }
 
             if (note.value != NoteValue::whole)
             {
@@ -416,4 +538,5 @@ private:
     int liveChordBarNumber = 1;
     double liveChordQuarterInBar = 0.0;
     juce::String liveChordText;
+    juce::String staffLabel;
 };

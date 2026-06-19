@@ -29,6 +29,7 @@ public:
         addAndMakeVisible(staff1ClefSelector);
         staff1ClefSelector.addItem("Treble", 1);
         staff1ClefSelector.addItem("Bass", 2);
+        staff1ClefSelector.addItem("Drum", 3);
         staff1ClefSelector.setSelectedId(1, juce::dontSendNotification);
         staff1ClefSelector.onChange = [this] { rebuildAllStaffs(); };
 
@@ -40,6 +41,7 @@ public:
         addAndMakeVisible(staff2ClefSelector);
         staff2ClefSelector.addItem("Treble", 1);
         staff2ClefSelector.addItem("Bass", 2);
+        staff2ClefSelector.addItem("Drum", 3);
         staff2ClefSelector.setSelectedId(1, juce::dontSendNotification);
         staff2ClefSelector.onChange = [this] { rebuildAllStaffs(); };
 
@@ -51,6 +53,7 @@ public:
         addAndMakeVisible(staff3ClefSelector);
         staff3ClefSelector.addItem("Treble", 1);
         staff3ClefSelector.addItem("Bass", 2);
+        staff3ClefSelector.addItem("Drum", 3);
         staff3ClefSelector.setSelectedId(1, juce::dontSendNotification);
         staff3ClefSelector.onChange = [this] { rebuildAllStaffs(); };
 
@@ -265,7 +268,11 @@ private:
 
     static ScoreRenderer::ClefType getClefTypeFromCombo(const juce::ComboBox& combo)
     {
-        return combo.getSelectedId() == 2 ? ScoreRenderer::ClefType::bass : ScoreRenderer::ClefType::treble;
+        if (combo.getSelectedId() == 2)
+            return ScoreRenderer::ClefType::bass;
+        if (combo.getSelectedId() == 3)
+            return ScoreRenderer::ClefType::drum;
+        return ScoreRenderer::ClefType::treble;
     }
 
     static void layoutStaffControls(juce::Rectangle<int> area,
@@ -641,6 +648,7 @@ private:
     {
         model.clear();
         renderer.setKeySignature(false, 0);
+        renderer.setStaffLabel({});
         renderer.repaint();
     }
 
@@ -674,6 +682,7 @@ private:
 
         auto chords = ChordDetector::detect(chordAnalysisNotes, project.tempoMap, project.maxBar, namingOptions);
         model.build(project.tempoMap, quantized, chords, project.maxBar);
+        renderer.setStaffLabel(track.name);
         renderer.setClefType(getClefTypeFromCombo(clefSelector));
         renderer.setCurrentBar(playbackController.getCurrentBar());
     }
