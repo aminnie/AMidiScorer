@@ -432,15 +432,30 @@ private:
         else
         {
             constexpr int chordLabelWidth = 86;
+            bool firstLabelPlaced = false;
+            int previousRight = staffRect.getX() + 6;
             for (const auto& chord : bar.chords)
             {
-                const double clampedQuarter = juce::jlimit(0.0, juce::jmax(0.0, qPerBar), chord.quarter);
-                const float chordX = left + static_cast<float>((clampedQuarter / juce::jmax(0.25, qPerBar)) * width);
-                const int textX = juce::jlimit(staffRect.getX(), staffRect.getRight() - chordLabelWidth,
-                                               static_cast<int>(chordX) - chordLabelWidth / 2);
+                int textX = staffRect.getX() + 6;
+                if (!firstLabelPlaced || chord.quarter <= 1.0e-6)
+                {
+                    // Anchor the first chord at the left edge to align with the bar counter header.
+                    textX = barRect.getX() + 8;
+                }
+                else
+                {
+                    const double clampedQuarter = juce::jlimit(0.0, juce::jmax(0.0, qPerBar), chord.quarter);
+                    const float chordX = left + static_cast<float>((clampedQuarter / juce::jmax(0.25, qPerBar)) * width);
+                    textX = juce::jlimit(staffRect.getX(), staffRect.getRight() - chordLabelWidth,
+                                         static_cast<int>(chordX) - chordLabelWidth / 2);
+                    textX = juce::jmax(textX, previousRight + 2);
+                }
+
                 g.drawText(chord.symbol,
                            juce::Rectangle<int>(textX, chordTop, chordLabelWidth, 20),
                            juce::Justification::centred);
+                firstLabelPlaced = true;
+                previousRight = textX + chordLabelWidth;
             }
         }
 
