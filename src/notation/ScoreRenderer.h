@@ -115,10 +115,68 @@ public:
     }
 
 private:
+    struct SpelledPitch
+    {
+        int letter = 0;      // 0..6 => C..B
+        int accidental = 0;  // -1 flat, 0 natural, +1 sharp
+        int octave = 4;      // scientific pitch octave
+    };
+
+    enum class SpellingMode
+    {
+        sharps,
+        flats,
+        mixedInC
+    };
+
     static bool isBlackKeyPitchClass(int pitchClass)
     {
         const int pc = (pitchClass % 12 + 12) % 12;
         return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10;
+    }
+
+    SpellingMode getSpellingMode() const
+    {
+        if (hasKeySignature && keySharpsOrFlats < 0)
+            return SpellingMode::flats;
+        if (hasKeySignature && keySharpsOrFlats > 0)
+            return SpellingMode::sharps;
+        return SpellingMode::mixedInC;
+    }
+
+    SpelledPitch spellMidiPitch(int midiNote) const
+    {
+        static constexpr std::array<int, 12> sharpLetters = { 0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6 };
+        static constexpr std::array<int, 12> sharpAccids =  { 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0 };
+        static constexpr std::array<int, 12> flatLetters =  { 0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6 };
+        static constexpr std::array<int, 12> flatAccids =   { 0,-1, 0,-1, 0, 0,-1, 0,-1, 0,-1, 0 };
+        static constexpr std::array<int, 12> mixedLetters = { 0, 0, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6 };
+        static constexpr std::array<int, 12> mixedAccids =  { 0, 1, 0,-1, 0, 0, 1, 0,-1, 0,-1, 0 };
+
+        const int note = juce::jlimit(0, 127, midiNote);
+        const int pc = note % 12;
+        const int octave = note / 12 - 1;
+        const auto mode = getSpellingMode();
+
+        SpelledPitch spelled;
+        spelled.octave = octave;
+        switch (mode)
+        {
+            case SpellingMode::sharps:
+                spelled.letter = sharpLetters[(size_t) pc];
+                spelled.accidental = sharpAccids[(size_t) pc];
+                break;
+            case SpellingMode::flats:
+                spelled.letter = flatLetters[(size_t) pc];
+                spelled.accidental = flatAccids[(size_t) pc];
+                break;
+            case SpellingMode::mixedInC:
+                spelled.letter = mixedLetters[(size_t) pc];
+                spelled.accidental = mixedAccids[(size_t) pc];
+                break;
+        }
+
+        return spelled;
     }
 
     juce::String accidentalTextForMidi(int midiNote) const
@@ -126,12 +184,10 @@ private:
         if (clefType == ClefType::drum)
             return {};
 
-        const int pc = (midiNote % 12 + 12) % 12;
-        if (!isBlackKeyPitchClass(pc))
+        const auto spelled = spellMidiPitch(midiNote);
+        if (spelled.accidental == 0)
             return {};
-
-        const bool preferFlats = hasKeySignature && keySharpsOrFlats < 0;
-        return preferFlats ? "b" : "#";
+        return spelled.accidental < 0 ? "b" : "#";
     }
 
     static void drawLedgerLines(juce::Graphics& g, const juce::Rectangle<int>& staffRect, float x, float y)
@@ -152,9 +208,9 @@ private:
         }
     }
 
-    static float staffYForMidi(int midiNote, const juce::Rectangle<int>& area, ClefType clefType)
+    float staffYForMidi(int midiNote, const juce::Rectangle<int>& area, ClefType clef) const
     {
-        if (clefType == ClefType::drum)
+        if (clef == ClefType::drum)
         {
             // Practical GM-style mapping: kick low, snare center, cymbals high.
             const float center = static_cast<float>(area.getCentreY());
@@ -189,10 +245,15 @@ private:
             }
         }
 
-        const int referenceMidi = clefType == ClefType::bass ? 50 : 71;
+        const auto spelled = spellMidiPitch(midiNote);
+        const int diatonicIndex = spelled.octave * 7 + spelled.letter;
+        const int referenceDiatonicIndex = clef == ClefType::bass
+            ? (3 * 7 + 1) // D3 on bass middle line
+            : (4 * 7 + 6); // B4 on treble middle line
+
         const float center = static_cast<float>(area.getCentreY());
-        const float step = 4.0f;
-        return center - (static_cast<float>(midiNote) - static_cast<float>(referenceMidi)) * step * 0.5f;
+        constexpr float diatonicStepPx = 5.5f; // line-space distance (half of 11 px staff line gap)
+        return center - static_cast<float>(diatonicIndex - referenceDiatonicIndex) * diatonicStepPx;
     }
 
     static bool isCymbalOrHatMidi(int midiNote)
@@ -288,6 +349,17 @@ private:
         return 0;
     }
 
+    static void drawSharpGlyph(juce::Graphics& g, int x, int y, float scale = 1.0f)
+    {
+        const float x0 = static_cast<float>(x);
+        const float y0 = static_cast<float>(y);
+        const float s = juce::jmax(0.2f, scale);
+        g.drawLine(x0 + 5.0f * s, y0 + 1.0f * s,  x0 + 4.0f * s,  y0 + 19.0f * s, 1.3f * s);
+        g.drawLine(x0 + 11.0f * s, y0 + 0.0f * s, x0 + 10.0f * s, y0 + 18.0f * s, 1.3f * s);
+        g.drawLine(x0 + 2.0f * s, y0 + 7.0f * s,  x0 + 14.0f * s, y0 + 5.0f * s,  1.3f * s);
+        g.drawLine(x0 + 1.0f * s, y0 + 13.0f * s, x0 + 13.0f * s, y0 + 11.0f * s, 1.3f * s);
+    }
+
     void drawClefSymbol(juce::Graphics& g, const juce::Rectangle<int>& staffRect, int reserveWidth, juce::Colour colour) const
     {
         if (reserveWidth <= 0)
@@ -341,7 +413,10 @@ private:
         for (int i = 0; i < symbolCount; ++i)
         {
             const int y = centerY - offsets[(size_t) i] * halfStep - 11;
-            g.drawText(symbol, juce::Rectangle<int>(x, y, 13, 21), juce::Justification::centred);
+            if (isSharp)
+                drawSharpGlyph(g, x, y, 1.0f);
+            else
+                g.drawText(symbol, juce::Rectangle<int>(x, y, 18, 21), juce::Justification::centred, false);
             x += 12;
             if (x > maxX)
                 break;
@@ -528,10 +603,18 @@ private:
             const auto accidentalText = accidentalTextForMidi(note.midiNote);
             if (accidentalText.isNotEmpty())
             {
-                g.setFont(12.0f);
-                g.drawText(accidentalText,
-                           juce::Rectangle<int>(static_cast<int>(x - 10.0f), static_cast<int>(y - 8.0f), 8, 16),
-                           juce::Justification::centred);
+                const int accidentalX = static_cast<int>(x - 11.0f);
+                const int accidentalY = static_cast<int>(y - 8.0f);
+                if (accidentalText == "#")
+                    drawSharpGlyph(g, accidentalX, accidentalY, 0.58f);
+                else
+                {
+                    g.setFont(12.0f);
+                    g.drawText(accidentalText,
+                               juce::Rectangle<int>(accidentalX, accidentalY, 12, 16),
+                               juce::Justification::centred,
+                               false);
+                }
                 g.setColour(noteColour);
             }
 
