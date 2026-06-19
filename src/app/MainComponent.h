@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include "../midi/MidiProjectLoader.h"
 #include "../notation/Quantizer.h"
 #include "../notation/ScoreModel.h"
@@ -123,6 +124,30 @@ public:
         addAndMakeVisible(statusLabel);
         statusLabel.setJustificationType(juce::Justification::centredLeft);
 
+        addAndMakeVisible(keyOverrideLabel);
+        keyOverrideLabel.setText("Key:", juce::dontSendNotification);
+        keyOverrideLabel.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(keyOverrideInput);
+        keyOverrideInput.setInputRestrictions(6, "ABCDEFGabcdefg#bBmMnNiI");
+        keyOverrideInput.setText({}, juce::dontSendNotification);
+        keyOverrideInput.setTooltip("Override detected song key (e.g., C, Bb, F#, F#m).");
+        keyOverrideInput.onReturnKey = [this] { applyKeyOverrideFromInput(true); rebuildAllStaffs(); };
+        keyOverrideInput.onFocusLost = [this] { applyKeyOverrideFromInput(true); rebuildAllStaffs(); };
+
+        addAndMakeVisible(tempoOverrideLabel);
+        tempoOverrideLabel.setText("Tempo:", juce::dontSendNotification);
+        tempoOverrideLabel.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(tempoOverrideInput);
+        tempoOverrideInput.setInputRestrictions(6, "0123456789.");
+        tempoOverrideInput.setText({}, juce::dontSendNotification);
+        tempoOverrideInput.setTooltip("Override playback tempo BPM (e.g., 96 or 120.5). Leave blank to use detected tempo.");
+        tempoOverrideInput.onReturnKey = [this] { applyTempoOverrideFromInput(true); };
+        tempoOverrideInput.onFocusLost = [this] { applyTempoOverrideFromInput(true); };
+        addAndMakeVisible(tempoOverrideHintLabel);
+        tempoOverrideHintLabel.setText("blank=MIDI", juce::dontSendNotification);
+        tempoOverrideHintLabel.setJustificationType(juce::Justification::centredLeft);
+        tempoOverrideHintLabel.setTooltip("Leave the tempo override blank to use the MIDI tempo map.");
+
         addAndMakeVisible(transportLabel);
         transportLabel.setText("Bar 1", juce::dontSendNotification);
         transportLabel.setJustificationType(juce::Justification::centredRight);
@@ -195,6 +220,11 @@ public:
         auto statusRow = area.removeFromTop(24);
         savePresetButton.setBounds(statusRow.removeFromLeft(100).reduced(4, 0));
         loadPresetButton.setBounds(statusRow.removeFromLeft(100).reduced(4, 0));
+        tempoOverrideLabel.setBounds(statusRow.removeFromLeft(50));
+        tempoOverrideInput.setBounds(statusRow.removeFromLeft(72).reduced(4, 0));
+        tempoOverrideHintLabel.setBounds(statusRow.removeFromLeft(80));
+        keyOverrideLabel.setBounds(statusRow.removeFromLeft(36));
+        keyOverrideInput.setBounds(statusRow.removeFromLeft(68).reduced(4, 0));
         statusLabel.setBounds(statusRow);
         area.removeFromTop(8);
 
@@ -220,6 +250,14 @@ private:
         double markerQuarterInBar = 0.0;
     };
 
+    struct ParsedKey
+    {
+        int tonicPc = 0;
+        int sharpsOrFlats = 0;
+        bool isMinor = false;
+        juce::String displayText;
+    };
+
     void updateWindowTitle()
     {
         if (auto* window = findParentComponentOfClass<juce::DocumentWindow>())
@@ -234,6 +272,178 @@ private:
     static int getClampedTranspose(const juce::TextEditor& input)
     {
         return juce::jlimit(-24, 24, input.getText().trim().getIntValue());
+    }
+
+    static juce::String formatTempoBpm(double bpm)
+    {
+        const int rounded = static_cast<int>(std::round(bpm));
+        return std::abs(bpm - static_cast<double>(rounded)) < 0.05
+            ? juce::String(rounded) + " BPM"
+            : juce::String(bpm, 1) + " BPM";
+    }
+
+    std::optional<double> parseTempoOverrideText(const juce::String& input) const
+    {
+        const auto trimmed = input.trim();
+        if (trimmed.isEmpty())
+            return std::nullopt;
+
+        const double bpm = trimmed.getDoubleValue();
+        if (!std::isfinite(bpm) || bpm < 10.0 || bpm > 400.0)
+            return std::nullopt;
+        return bpm;
+    }
+
+    std::optional<double> getDetectedTempoBpm() const
+    {
+        const auto& tempos = project.tempoMap.getTempoEvents();
+        if (tempos.empty())
+            return std::nullopt;
+        return tempos.front().bpm;
+    }
+
+    void syncPlaybackTempoOverride()
+    {
+        playbackController.setTempoOverrideBpm(tempoOverrideBpm, getDetectedTempoBpm());
+    }
+
+    static int tonicPcFromSignature(int sharpsOrFlats, bool isMinor)
+    {
+        static constexpr std::array<int, 15> majorTonicPcs = { 11, 6, 1, 8, 3, 10, 5, 0, 7, 2, 9, 4, 11, 6, 1 };
+        static constexpr std::array<int, 15> minorTonicPcs = { 8, 3, 10, 5, 0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10 };
+        const int idx = juce::jlimit(0, 14, sharpsOrFlats + 7);
+        return isMinor ? minorTonicPcs[(size_t) idx] : majorTonicPcs[(size_t) idx];
+    }
+
+    static std::optional<ParsedKey> parseKeyText(const juce::String& input)
+    {
+        auto raw = input.trim().removeCharacters(" ");
+        if (raw.isEmpty())
+            return std::nullopt;
+
+        bool isMinor = false;
+        if (raw.endsWithIgnoreCase("m") && raw.length() > 1)
+        {
+            isMinor = true;
+            raw = raw.dropLastCharacters(1);
+        }
+
+        if (raw.isEmpty())
+            return std::nullopt;
+
+        const auto root = raw.substring(0, 1).toUpperCase();
+        juce::String accidental;
+        if (raw.length() >= 2)
+        {
+            const auto c = raw.substring(1, 2);
+            if (c == "#" || c.equalsIgnoreCase("b"))
+                accidental = c == "#" ? "#" : "b";
+        }
+
+        const auto normalizedKey = root + accidental + (isMinor ? "m" : "");
+        static constexpr const char* majorKeys[15]
+            = { "Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#" };
+        static constexpr const char* minorKeys[15]
+            = { "Abm", "Ebm", "Bbm", "Fm", "Cm", "Gm", "Dm", "Am", "Em", "Bm", "F#m", "C#m", "G#m", "D#m", "A#m" };
+        const auto& keys = isMinor ? minorKeys : majorKeys;
+
+        for (int i = 0; i < 15; ++i)
+        {
+            const juce::String candidate(keys[(size_t) i]);
+            if (!candidate.equalsIgnoreCase(normalizedKey))
+                continue;
+
+            ParsedKey parsed;
+            parsed.sharpsOrFlats = i - 7;
+            parsed.isMinor = isMinor;
+            parsed.tonicPc = tonicPcFromSignature(parsed.sharpsOrFlats, parsed.isMinor);
+            parsed.displayText = candidate;
+            return parsed;
+        }
+
+        return std::nullopt;
+    }
+
+    void applyKeyOverrideFromInput(bool userInitiated)
+    {
+        const auto text = keyOverrideInput.getText().trim();
+        if (text.isEmpty())
+        {
+            keyOverride = std::nullopt;
+            if (userInitiated)
+                setStatusMessage("Key override cleared (using detected key).");
+            return;
+        }
+
+        const auto parsed = parseKeyText(text);
+        if (!parsed.has_value())
+        {
+            keyOverride = std::nullopt;
+            keyOverrideInput.setText({}, juce::dontSendNotification);
+            if (userInitiated)
+                setStatusMessage("Invalid key override. Reverted to detected key.");
+            return;
+        }
+
+        keyOverride = parsed;
+        keyOverrideInput.setText(parsed->displayText, juce::dontSendNotification);
+        if (userInitiated)
+            setStatusMessage("Key override set to " + parsed->displayText + ".");
+    }
+
+    void applyTempoOverrideFromInput(bool userInitiated)
+    {
+        const auto text = tempoOverrideInput.getText().trim();
+        if (text.isEmpty())
+        {
+            tempoOverrideBpm = std::nullopt;
+            syncPlaybackTempoOverride();
+            if (userInitiated)
+                setStatusMessage("Tempo override cleared (using detected tempo).");
+            return;
+        }
+
+        const auto parsed = parseTempoOverrideText(text);
+        if (!parsed.has_value())
+        {
+            tempoOverrideBpm = std::nullopt;
+            tempoOverrideInput.setText({}, juce::dontSendNotification);
+            syncPlaybackTempoOverride();
+            if (userInitiated)
+                setStatusMessage("Invalid tempo override. Enter a value from 10 to 400 BPM.");
+            return;
+        }
+
+        tempoOverrideBpm = parsed;
+        tempoOverrideInput.setText(juce::String(parsed.value(), 1), juce::dontSendNotification);
+        syncPlaybackTempoOverride();
+        if (userInitiated)
+            setStatusMessage("Tempo override set to " + formatTempoBpm(parsed.value()) + ".");
+    }
+
+    int getDetectedKeyTonicPc() const
+    {
+        if (!project.hasKeySignature)
+            return 0;
+        return tonicPcFromSignature(project.keySharpsOrFlats, project.keyIsMajor);
+    }
+
+    int getKeyOverrideTransposeSemitones() const
+    {
+        if (!keyOverride.has_value())
+            return 0;
+
+        int delta = keyOverride->tonicPc - getDetectedKeyTonicPc();
+        while (delta > 6)
+            delta -= 12;
+        while (delta < -6)
+            delta += 12;
+        return delta;
+    }
+
+    int getEffectiveTransposeSemitones(bool normalizeText = false)
+    {
+        return getGlobalTransposeSemitones(normalizeText) + getKeyOverrideTransposeSemitones();
     }
 
     ChordDetector::NamingOptions getChordNamingOptions() const
@@ -399,6 +609,31 @@ private:
         return dir.getChildFile("ui_preset.json");
     }
 
+    juce::String getSongPresetTempoKey() const
+    {
+        if (!project.file.existsAsFile())
+            return {};
+        return project.file.getFullPathName().replaceCharacter('\\', '/').toLowerCase();
+    }
+
+    juce::String getSongTempoOverrideFromPreset(const juce::DynamicObject& preset) const
+    {
+        const auto songKey = getSongPresetTempoKey();
+        if (songKey.isEmpty() || !preset.hasProperty("tempoOverridesBySong"))
+            return {};
+
+        const auto overridesVar = preset.getProperty("tempoOverridesBySong");
+        auto* overridesObj = overridesVar.getDynamicObject();
+        if (overridesObj == nullptr)
+            return {};
+
+        const juce::Identifier songId(songKey);
+        if (!overridesObj->hasProperty(songId))
+            return {};
+
+        return overridesObj->getProperty(songId).toString().trim();
+    }
+
     void saveUiPreset()
     {
         auto obj = std::make_unique<juce::DynamicObject>();
@@ -413,9 +648,45 @@ private:
         obj->setProperty("accidental", accidentalSelector.getSelectedId());
         obj->setProperty("alias", aliasSelector.getSelectedId());
         obj->setProperty("scoreLightMode", scoreColorToggle.getToggleState());
+        obj->setProperty("keyOverrideEnabled", keyOverride.has_value());
+        obj->setProperty("keyOverrideText", keyOverride.has_value() ? keyOverride->displayText : juce::String());
+        obj->setProperty("tempoOverrideEnabled", tempoOverrideBpm.has_value());
+        obj->setProperty("tempoOverrideText", tempoOverrideInput.getText().trim());
+
+        auto tempoOverridesBySong = std::make_unique<juce::DynamicObject>();
+        const auto file = getPresetFilePath();
+        if (file.existsAsFile())
+        {
+            const auto existingJsonText = file.loadFileAsString();
+            juce::var existingParsed;
+            const auto existingParseResult = juce::JSON::parse(existingJsonText, existingParsed);
+            if (!existingParseResult.failed() && existingParsed.isObject())
+            {
+                if (auto* existingObj = existingParsed.getDynamicObject())
+                {
+                    const auto existingOverridesVar = existingObj->getProperty("tempoOverridesBySong");
+                    if (auto* existingOverridesObj = existingOverridesVar.getDynamicObject())
+                    {
+                        for (const auto& prop : existingOverridesObj->getProperties())
+                            tempoOverridesBySong->setProperty(prop.name, prop.value);
+                    }
+                }
+            }
+        }
+
+        const auto songKey = getSongPresetTempoKey();
+        if (songKey.isNotEmpty())
+        {
+            const juce::Identifier songId(songKey);
+            const auto songTempoText = tempoOverrideInput.getText().trim();
+            if (songTempoText.isNotEmpty())
+                tempoOverridesBySong->setProperty(songId, songTempoText);
+            else
+                tempoOverridesBySong->removeProperty(songId);
+        }
+        obj->setProperty("tempoOverridesBySong", juce::var(tempoOverridesBySong.release()));
 
         const juce::var payload(obj.release());
-        const auto file = getPresetFilePath();
         if (file.replaceWithText(juce::JSON::toString(payload)))
             setStatusMessage("Preset saved: " + file.getFullPathName());
         else
@@ -475,6 +746,25 @@ private:
         accidentalSelector.setSelectedId(getIntProperty("accidental", 1), juce::dontSendNotification);
         aliasSelector.setSelectedId(getIntProperty("alias", 1), juce::dontSendNotification);
         scoreColorToggle.setToggleState(getIntProperty("scoreLightMode", 0) != 0, juce::dontSendNotification);
+        const bool keyOverrideEnabled = getIntProperty("keyOverrideEnabled", 0) != 0;
+        if (keyOverrideEnabled && obj->hasProperty("keyOverrideText"))
+            keyOverrideInput.setText(obj->getProperty("keyOverrideText").toString(), juce::dontSendNotification);
+        else
+            keyOverrideInput.setText({}, juce::dontSendNotification);
+        applyKeyOverrideFromInput(false);
+
+        const auto songTempoOverride = getSongTempoOverrideFromPreset(*obj);
+        if (songTempoOverride.isNotEmpty())
+            tempoOverrideInput.setText(songTempoOverride, juce::dontSendNotification);
+        else
+        {
+            const bool tempoOverrideEnabled = getIntProperty("tempoOverrideEnabled", 0) != 0;
+            if (tempoOverrideEnabled && obj->hasProperty("tempoOverrideText"))
+                tempoOverrideInput.setText(obj->getProperty("tempoOverrideText").toString(), juce::dontSendNotification);
+            else
+                tempoOverrideInput.setText({}, juce::dontSendNotification);
+        }
+        applyTempoOverrideFromInput(false);
         applyScoreColorScheme();
 
         rebuildAllStaffs();
@@ -507,11 +797,16 @@ private:
             mergedNotes.insert(mergedNotes.end(), notes.begin(), notes.end());
         }
 
-        const int transposeSemitones = getGlobalTransposeSemitones();
+        const int transposeSemitones = getEffectiveTransposeSemitones();
         if (transposeSemitones != 0)
         {
             for (auto& note : mergedNotes)
+            {
+                // Preserve General MIDI percussion mapping on channel 10.
+                if (note.channel == 10)
+                    continue;
                 note.noteNumber = juce::jlimit(0, 127, note.noteNumber + transposeSemitones);
+            }
         }
 
         return mergedNotes;
@@ -615,11 +910,15 @@ private:
             refreshTrackSelectors();
             refreshChordTrackButtons();
             playbackController.setTempoMap(&project.tempoMap, project.totalDurationSec);
+            tempoOverrideBpm = std::nullopt;
+            tempoOverrideInput.setText({}, juce::dontSendNotification);
+            syncPlaybackTempoOverride();
             continueArmed = false;
             continueBarInput.setText("1", juce::dontSendNotification);
             resetLiveChordState();
             updateTransportControls();
-            keyLabel.setText("Key: " + project.getKeyDisplayText(), juce::dontSendNotification);
+            keyLabel.setText("Key: " + (keyOverride.has_value() ? keyOverride->displayText : project.getKeyDisplayText()),
+                             juce::dontSendNotification);
             midiMetaLabel.setText(buildMidiMetaText(), juce::dontSendNotification);
             assignDefaultStaffSelections();
             const bool autoPresetLoaded = loadUiPreset(true);
@@ -681,8 +980,9 @@ private:
 
         const auto& track = project.tracks[(size_t) index];
         auto transposedNotes = track.notes;
-        const int transposeSemitones = getGlobalTransposeSemitones(true);
-        if (transposeSemitones != 0)
+        const auto clefType = getClefTypeFromCombo(clefSelector);
+        const int transposeSemitones = getEffectiveTransposeSemitones(true);
+        if (transposeSemitones != 0 && clefType != ScoreRenderer::ClefType::drum)
         {
             for (auto& note : transposedNotes)
                 note.noteNumber = juce::jlimit(0, 127, note.noteNumber + transposeSemitones);
@@ -696,7 +996,7 @@ private:
         auto chords = ChordDetector::detect(chordAnalysisNotes, project.tempoMap, project.maxBar, namingOptions);
         model.build(project.tempoMap, quantized, chords, project.maxBar);
         renderer.setStaffLabel(track.name);
-        renderer.setClefType(getClefTypeFromCombo(clefSelector));
+        renderer.setClefType(clefType);
         renderer.setCurrentBar(playbackController.getCurrentBar());
     }
 
@@ -712,9 +1012,12 @@ private:
             return;
         }
 
-        scoreRenderer.setKeySignature(project.hasKeySignature, project.keySharpsOrFlats);
-        scoreRenderer2.setKeySignature(project.hasKeySignature, project.keySharpsOrFlats);
-        scoreRenderer3.setKeySignature(project.hasKeySignature, project.keySharpsOrFlats);
+        const bool useOverride = keyOverride.has_value();
+        const bool hasKeySignature = useOverride ? true : project.hasKeySignature;
+        const int keySharpsOrFlats = useOverride ? keyOverride->sharpsOrFlats : project.keySharpsOrFlats;
+        scoreRenderer.setKeySignature(hasKeySignature, keySharpsOrFlats);
+        scoreRenderer2.setKeySignature(hasKeySignature, keySharpsOrFlats);
+        scoreRenderer3.setKeySignature(hasKeySignature, keySharpsOrFlats);
 
         rebuildStaff(0, staff1TrackSelector, staff1ClefSelector, scoreModel1, scoreRenderer);
         rebuildStaff(1, staff2TrackSelector, staff2ClefSelector, scoreModel2, scoreRenderer2);
@@ -731,7 +1034,8 @@ private:
         int selectedTrackCount = 0;
         for (auto* button : chordTrackButtons)
             selectedTrackCount += button->getToggleState() ? 1 : 0;
-        keyLabel.setText("Key: " + project.getKeyDisplayText(), juce::dontSendNotification);
+        keyLabel.setText("Key: " + (keyOverride.has_value() ? keyOverride->displayText : project.getKeyDisplayText()),
+                         juce::dontSendNotification);
         midiMetaLabel.setText(buildMidiMetaText(), juce::dontSendNotification);
         setStatusMessage("Staffs ready  | Chords from " + juce::String(selectedTrackCount) + " selected tracks");
     }
@@ -760,7 +1064,9 @@ private:
         transportLabel.setText("Bar 1", juce::dontSendNotification);
         displayedBar = 1;
         updateTransportControls();
-        setStatusMessage("Playback running (tempo mapped from MIDI).");
+        setStatusMessage(tempoOverrideBpm.has_value()
+            ? ("Playback running (tempo override " + formatTempoBpm(tempoOverrideBpm.value()) + ").")
+            : juce::String("Playback running (tempo mapped from MIDI)."));
     }
 
     void continuePlaybackFromBar()
@@ -822,11 +1128,10 @@ private:
         juce::String tempoText = "n/a";
         if (!tempos.empty())
         {
-            const double bpm = tempos.front().bpm;
-            const int rounded = static_cast<int>(std::round(bpm));
-            tempoText = std::abs(bpm - static_cast<double>(rounded)) < 0.05
-                ? juce::String(rounded) + " BPM"
-                : juce::String(bpm, 1) + " BPM";
+            const double detectedBpm = tempos.front().bpm;
+            tempoText = formatTempoBpm(detectedBpm);
+            if (tempoOverrideBpm.has_value())
+                tempoText = formatTempoBpm(tempoOverrideBpm.value()) + " (detected " + formatTempoBpm(detectedBpm) + ")";
         }
 
         return "Sig: " + signatureText + "  Tempo: " + tempoText;
@@ -834,7 +1139,9 @@ private:
 
     juce::String buildStatusDetailsText() const
     {
-        const auto keyText = "Key: " + project.getKeyDisplayText();
+        const auto keyText = keyOverride.has_value()
+            ? ("KeySrc: override (" + keyOverride->displayText + ")")
+            : ("KeySrc: detected (" + project.getKeyDisplayText() + ")");
         const auto barText = "Bar: " + juce::String(juce::jmax(1, displayedBar));
         return buildMidiMetaText() + "  | " + keyText + "  | " + barText;
     }
@@ -877,6 +1184,11 @@ private:
     juce::TextButton savePresetButton;
     juce::TextButton loadPresetButton;
     juce::Label statusLabel;
+    juce::Label tempoOverrideLabel;
+    juce::TextEditor tempoOverrideInput;
+    juce::Label tempoOverrideHintLabel;
+    juce::Label keyOverrideLabel;
+    juce::TextEditor keyOverrideInput;
     juce::Label transportLabel;
     juce::Label keyLabel;
     juce::Label midiMetaLabel;
@@ -894,6 +1206,8 @@ private:
     bool continueArmed = false;
     int displayedBar = 1;
     juce::String statusMessageBase;
+    std::optional<double> tempoOverrideBpm;
+    std::optional<ParsedKey> keyOverride;
     std::array<std::vector<MidiNoteEvent>, 3> liveChordNotesByStaff;
     std::array<LiveChordState, 3> liveChordStates;
 };
