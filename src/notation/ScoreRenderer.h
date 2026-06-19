@@ -276,7 +276,7 @@ private:
             return 0;
 
         const int symbolCount = juce::jlimit(0, 7, std::abs(sharpsOrFlats));
-        return 16 + symbolCount * 18;
+        return 11 + symbolCount * 12;
     }
 
     static int clefReserveWidth(ClefType type)
@@ -335,14 +335,14 @@ private:
         const auto symbol = isSharp ? "#" : "b";
 
         g.setColour(colour);
-        g.setFont(26.0f);
+        g.setFont(17.0f);
         int x = staffRect.getX() + xOffset + 8;
         const int maxX = staffRect.getX() + xOffset + reserveWidth;
         for (int i = 0; i < symbolCount; ++i)
         {
-            const int y = centerY - offsets[(size_t) i] * halfStep - 16;
-            g.drawText(symbol, juce::Rectangle<int>(x, y, 20, 32), juce::Justification::centred);
-            x += 18;
+            const int y = centerY - offsets[(size_t) i] * halfStep - 11;
+            g.drawText(symbol, juce::Rectangle<int>(x, y, 13, 21), juce::Justification::centred);
+            x += 12;
             if (x > maxX)
                 break;
         }
