@@ -502,6 +502,24 @@ private:
         clefSelector.setBounds(area.removeFromLeft(78).reduced(4, 0));
     }
 
+    static bool trackHasChordSourceContent(const MidiTrackData& track)
+    {
+        if (!track.notes.empty())
+            return true;
+
+        for (int eventIndex = 0; eventIndex < track.sequence.getNumEvents(); ++eventIndex)
+        {
+            const auto* holder = track.sequence.getEventPointer(eventIndex);
+            if (holder == nullptr)
+                continue;
+
+            if (!holder->message.isMetaEvent())
+                return true;
+        }
+
+        return false;
+    }
+
     int getChordTracksLayoutHeight(int availableWidth) const
     {
         const int labelWidth = 110;
@@ -557,13 +575,20 @@ private:
         for (auto* button : chordTrackButtons)
             removeChildComponent(button);
         chordTrackButtons.clear(true);
+        chordTrackSourceIndices.clear();
 
+        int visibleCount = 0;
         for (int i = 0; i < static_cast<int>(project.tracks.size()); ++i)
         {
+            if (!trackHasChordSourceContent(project.tracks[(size_t) i]))
+                continue;
+
             auto* button = chordTrackButtons.add(new juce::ToggleButton(project.tracks[(size_t) i].name));
-            button->setToggleState(i < 5, juce::dontSendNotification);
+            chordTrackSourceIndices.add(i);
+            button->setToggleState(visibleCount < 5, juce::dontSendNotification);
             button->onClick = [this]() { rebuildAllStaffs(); };
             addAndMakeVisible(button);
+            ++visibleCount;
         }
 
         // Buttons are created dynamically after MIDI load; force an immediate relayout
@@ -578,7 +603,7 @@ private:
         for (int i = 0; i < chordTrackButtons.size(); ++i)
         {
             if (chordTrackButtons[i]->getToggleState())
-                selected.add(juce::String(i));
+                selected.add(juce::String(chordTrackSourceIndices[i]));
         }
         return selected.joinIntoString(",");
     }
@@ -595,9 +620,12 @@ private:
 
         for (const auto& token : tokens)
         {
-            const int idx = token.getIntValue();
-            if (idx >= 0 && idx < chordTrackButtons.size())
-                chordTrackButtons[idx]->setToggleState(true, juce::dontSendNotification);
+            const int trackIndex = token.getIntValue();
+            for (int i = 0; i < chordTrackButtons.size(); ++i)
+            {
+                if (chordTrackSourceIndices[i] == trackIndex)
+                    chordTrackButtons[i]->setToggleState(true, juce::dontSendNotification);
+            }
         }
 
         bool anySelected = false;
@@ -787,7 +815,7 @@ private:
         for (int i = 0; i < chordTrackButtons.size(); ++i)
         {
             if (chordTrackButtons[i]->getToggleState())
-                selectedIndices.add(i);
+                selectedIndices.add(chordTrackSourceIndices[i]);
         }
 
         if (selectedIndices.isEmpty() && selectedTrackIndex >= 0 && selectedTrackIndex < static_cast<int>(project.tracks.size()))
@@ -1217,10 +1245,14 @@ private:
         const auto keyText = keyOverride.has_value()
             ? ("KeySrc: override (" + keyOverride->displayText + ")")
             : ("KeySrc: detected (" + project.getKeyDisplayText() + ")");
-        const auto barText = project.tracks.empty()
+        return buildMidiMetaText() + "  | " + keyText;
+    }
+
+    juce::String buildBarText() const
+    {
+        return project.tracks.empty()
             ? juce::String("Bar: n/a")
             : ("Bar: " + juce::String(juce::jmax(1, displayedBar)) + "/" + juce::String(juce::jmax(1, project.maxBar)));
-        return buildMidiMetaText() + "  | " + keyText + "  | " + barText;
     }
 
     void setStatusMessage(const juce::String& message)
@@ -1232,7 +1264,7 @@ private:
     void refreshStatusMessage()
     {
         const auto prefix = statusMessageBase.isNotEmpty() ? statusMessageBase : juce::String("Ready");
-        statusLabel.setText(prefix + "  | " + buildStatusDetailsText(), juce::dontSendNotification);
+        statusLabel.setText(buildBarText() + "  | " + prefix + "  | " + buildStatusDetailsText(), juce::dontSendNotification);
     }
 
     juce::Label titleLabel;
@@ -1252,6 +1284,7 @@ private:
     juce::ComboBox aliasSelector;
     juce::Label chordTracksLabel;
     juce::OwnedArray<juce::ToggleButton> chordTrackButtons;
+    juce::Array<int> chordTrackSourceIndices;
     juce::ToggleButton scoreColorToggle;
     juce::Label globalTransposeLabel;
     juce::TextEditor globalTransposeInput;
