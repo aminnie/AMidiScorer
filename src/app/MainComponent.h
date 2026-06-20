@@ -173,6 +173,7 @@ public:
         scoreRenderer3.setClefType(ScoreRenderer::ClefType::treble);
         applyScoreColorScheme();
         setStatusMessage("Load a MIDI file to begin.");
+        loadLastMidiDirectoryFromPreset();
 
         updateTransportControls();
         setSize(1280, 720);
@@ -644,6 +645,52 @@ private:
         return dir.getChildFile("ui_preset.json");
     }
 
+    void loadLastMidiDirectoryFromPreset()
+    {
+        const auto file = getPresetFilePath();
+        if (!file.existsAsFile())
+            return;
+
+        juce::var parsed;
+        const auto parseResult = juce::JSON::parse(file.loadFileAsString(), parsed);
+        if (parseResult.failed() || !parsed.isObject())
+            return;
+
+        auto* obj = parsed.getDynamicObject();
+        if (obj == nullptr || !obj->hasProperty("lastMidiDirectory"))
+            return;
+
+        const juce::File candidate(obj->getProperty("lastMidiDirectory").toString());
+        if (candidate.isDirectory())
+            lastMidiDirectory = candidate;
+    }
+
+    void saveLastMidiDirectoryToPreset() const
+    {
+        if (!lastMidiDirectory.isDirectory())
+            return;
+
+        const auto file = getPresetFilePath();
+        juce::var parsed;
+        auto obj = std::make_unique<juce::DynamicObject>();
+
+        if (file.existsAsFile())
+        {
+            const auto parseResult = juce::JSON::parse(file.loadFileAsString(), parsed);
+            if (!parseResult.failed() && parsed.isObject())
+            {
+                if (auto* existing = parsed.getDynamicObject())
+                {
+                    for (const auto& property : existing->getProperties())
+                        obj->setProperty(property.name, property.value);
+                }
+            }
+        }
+
+        obj->setProperty("lastMidiDirectory", lastMidiDirectory.getFullPathName());
+        file.replaceWithText(juce::JSON::toString(juce::var(obj.release())));
+    }
+
     juce::String getSongPresetTempoKey() const
     {
         if (!project.file.existsAsFile())
@@ -687,6 +734,8 @@ private:
         obj->setProperty("keyOverrideText", keyOverride.has_value() ? keyOverride->displayText : juce::String());
         obj->setProperty("tempoOverrideEnabled", tempoOverrideBpm.has_value());
         obj->setProperty("tempoOverrideText", tempoOverrideInput.getText().trim());
+        if (lastMidiDirectory.isDirectory())
+            obj->setProperty("lastMidiDirectory", lastMidiDirectory.getFullPathName());
 
         auto tempoOverridesBySong = std::make_unique<juce::DynamicObject>();
         const auto file = getPresetFilePath();
@@ -781,6 +830,12 @@ private:
         accidentalSelector.setSelectedId(getIntProperty("accidental", 1), juce::dontSendNotification);
         aliasSelector.setSelectedId(getIntProperty("alias", 1), juce::dontSendNotification);
         scoreColorToggle.setToggleState(getIntProperty("scoreLightMode", 0) != 0, juce::dontSendNotification);
+        if (obj->hasProperty("lastMidiDirectory"))
+        {
+            const juce::File candidate(obj->getProperty("lastMidiDirectory").toString());
+            if (candidate.isDirectory())
+                lastMidiDirectory = candidate;
+        }
         const bool keyOverrideEnabled = getIntProperty("keyOverrideEnabled", 0) != 0;
         if (keyOverrideEnabled && obj->hasProperty("keyOverrideText"))
             keyOverrideInput.setText(obj->getProperty("keyOverrideText").toString(), juce::dontSendNotification);
@@ -921,7 +976,7 @@ private:
     {
         fileChooser = std::make_unique<juce::FileChooser>(
             "Select a MIDI file",
-            juce::File(),
+            lastMidiDirectory.isDirectory() ? lastMidiDirectory : juce::File(),
             "*.mid;*.midi",
             false,
             false,
@@ -933,6 +988,9 @@ private:
             const auto file = chooser.getResult();
             if (!file.existsAsFile())
                 return;
+
+            lastMidiDirectory = file.getParentDirectory();
+            saveLastMidiDirectoryToPreset();
 
             juce::String error;
             MidiProjectData loaded;
@@ -1315,6 +1373,7 @@ private:
     ScoreModel scoreModel3;
     PlaybackController playbackController;
     std::unique_ptr<juce::FileChooser> fileChooser;
+    juce::File lastMidiDirectory;
     bool continueArmed = false;
     int displayedBar = 1;
     juce::String statusMessageBase;
