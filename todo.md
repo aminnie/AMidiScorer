@@ -84,10 +84,10 @@ This checklist tracks code-review findings and implementation work items.
     - Scheduled events carry `sourceTrackIndex`.
     - Playback mix gate supports mute/solo precedence.
     - Track volume scales note-on and CC7/CC11 messages.
-- [x] Add Tracks tab UI for grouped Volume/Mute/Solo controls.
+- [x] Add Effects tab UI for grouped Volume/Mute/Solo controls.
   - Files: `src/app/TracksTabComponent.h`, `src/app/AppTabsHost.h`, `src/app/MainComponent.h`
   - Acceptance:
-    - New `Tracks` tab appears beside `Score` and `Player`.
+    - New `Effects` tab appears beside `Score` and `Player`.
     - Eligible tracks show bordered groups named by track with volume slider and mute/solo checkboxes.
 - [x] Persist per-song track mix values in preset profile.
   - Files: `src/app/MainComponent.h`

@@ -16,7 +16,7 @@ public:
         addAndMakeVisible(tabs);
         tabs.addTab("Score", juce::Colour(0xff1f2a36), &scoreTab, false);
         tabs.addTab("Player", juce::Colour(0xff20303a), &playerTab, false);
-        tabs.addTab("Tracks", juce::Colour(0xff2a263a), &tracksTab, false);
+        tabs.addTab("Effects", juce::Colour(0xff2a263a), &tracksTab, false);
         setSize(1280, 720);
     }
 

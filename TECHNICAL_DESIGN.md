@@ -23,7 +23,7 @@ Core modules:
 - `src/notation/ScoreModel.h` - score-domain symbols (notes, rests, ties, chords)
 - `src/notation/ScoreRenderer.h` - drawing engine for staff notation
 - `src/harmony/ChordDetector.h` - chord-template detection and naming
-- `src/app/AppTabsHost.h` - top-level tab host (`Score`, `Player`, `Tracks`)
+- `src/app/AppTabsHost.h` - top-level tab host (`Score`, `Player`, `Effects`)
 - `src/app/MainComponent.h` - score-page orchestration, UI state, playback sync
 - `src/app/PlayerTabComponent.h` - player-page transport and MIDI output UI
 - `src/app/TracksTabComponent.h` - per-track mix UI (volume/mute/solo)

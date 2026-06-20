@@ -34,14 +34,14 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Tabbed workspace:
   - `Score` tab for notation/chord controls and renderers
   - `Player` tab for transport controls and MIDI output selection
-  - `Tracks` tab for per-track Volume/Mute/Solo controls
+  - `Effects` tab for per-track Volume/Mute/Solo controls
 - MIDI player and output:
   - MIDI file playback events are scheduled from file time and dispatched on the same transport timeline that drives live score/chord updates
   - single selected MIDI output device (GM-oriented output path)
   - persisted selected output device identifier under `Documents/MidiScorer/midi_output.json`
 - Per-track playback mix:
   - per eligible MIDI track controls for volume (0..127), mute, and solo
-  - grouped controls by track name in the `Tracks` tab
+  - grouped controls by track name in the `Effects` tab
   - per-song track mix persistence in `Documents/MidiScorer/ui_preset.json` under `trackMixBySong`
 - Display options:
   - `Light Score` / dark score toggle (Light Score is default)
@@ -56,7 +56,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 
 - `CMakeLists.txt` - JUCE/CMake project setup
 - `Main.cpp` - JUCE application entry point
-- `src/app/AppTabsHost.h` - top-level tab container (`Score` + `Player` + `Tracks`)
+- `src/app/AppTabsHost.h` - top-level tab container (`Score` + `Player` + `Effects`)
 - `src/app/MainComponent.h` - score page UI controls, notation orchestration, playback sync
 - `src/app/PlayerTabComponent.h` - player page transport and MIDI output controls
 - `src/app/TracksTabComponent.h` - track mix page (per-track Volume/Mute/Solo)
@@ -118,7 +118,7 @@ ctest --test-dir build -C Debug --output-on-failure
    - score color mode
 7. Use **Score** tab to view/edit notation options and track assignments.
 8. Use **Player** tab to select an output device, then Play/Pause/Stop.
-9. Use **Tracks** tab to adjust per-track Volume, Mute, and Solo.
+9. Use **Effects** tab to adjust per-track Volume, Mute, and Solo.
 10. Use **Seek** or **Play From Bar** in the Player tab to scrub/start from a specific bar.
 
 ## Notes and known limitations
