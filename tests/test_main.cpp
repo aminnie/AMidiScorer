@@ -85,6 +85,7 @@ void testChordDetector()
 
 void testMidiLoaderRejectsSmpte()
 {
+    // Fixture intent: tempo-time-signature-changes (timing-format validation path)
     juce::TemporaryFile tempFile("smpte.mid");
     const auto file = tempFile.getFile();
     static const uint8_t smpteMidiData[] =
@@ -113,6 +114,7 @@ void testMidiLoaderRejectsSmpte()
 
 void testTrackNoteExtractorFlushesOrphans()
 {
+    // Fixture intent: ties-across-bars (sustained event finalization edge case)
     TempoMap map;
     std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
     std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
@@ -148,6 +150,7 @@ void testTrackNoteExtractorFlushesOrphans()
 
 void testScoreModelSplitsCrossBarNotes()
 {
+    // Fixture intent: ties-across-bars
     TempoMap map;
     std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
     std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
@@ -185,6 +188,7 @@ void testScoreModelSplitsCrossBarNotes()
 
 void testChordDetectorResetsAcrossSilence()
 {
+    // Fixture intent: altered-chords (window re-detection after silence)
     TempoMap map;
     std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
     std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
@@ -217,6 +221,7 @@ void testChordDetectorResetsAcrossSilence()
 
 void testScoreModelNormalizesChordQuarterInBar()
 {
+    // Fixture intent: syncopated-note-durations / altered-chords (bar-relative event placement)
     TempoMap map;
     std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
     std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
@@ -242,6 +247,34 @@ void testScoreModelNormalizesChordQuarterInBar()
         expectTrue(std::abs(bars.front().chords[1].quarter - 1.0) < 1.0e-6, "Second chord starts at quarter-in-bar 1");
     }
 }
+
+void testWindowClampBehaviorForScoreWindow()
+{
+    // Fixture intent: tempo-time-signature-changes (window navigation/clamp reliability)
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 3840.0);
+
+    QuantizedNote quarterNote;
+    quarterNote.midiNote = 60;
+    quarterNote.startQuarter = 0.0;
+    quarterNote.durationQuarter = 1.0;
+    quarterNote.value = NoteValue::quarter;
+
+    ScoreModel model;
+    model.build(map, std::vector<QuantizedNote> { quarterNote }, {}, 2);
+
+    const int clampedHigh = juce::jlimit(model.getFirstBar(), model.getLastBar(), 999);
+    const int clampedLow = juce::jlimit(model.getFirstBar(), model.getLastBar(), -20);
+    expectTrue(clampedHigh == model.getLastBar(), "Out-of-range high current bar clamps to last bar");
+    expectTrue(clampedLow == model.getFirstBar(), "Out-of-range low current bar clamps to first bar");
+
+    const auto highWindow = model.getWindowBars(clampedHigh, 2, 2);
+    const auto lowWindow = model.getWindowBars(clampedLow, 2, 2);
+    expectTrue(!highWindow.empty(), "High clamped bar produces a non-empty score window");
+    expectTrue(!lowWindow.empty(), "Low clamped bar produces a non-empty score window");
+}
 }
 
 int main()
@@ -254,6 +287,7 @@ int main()
     testScoreModelSplitsCrossBarNotes();
     testChordDetectorResetsAcrossSilence();
     testScoreModelNormalizesChordQuarterInBar();
+    testWindowClampBehaviorForScoreWindow();
 
     if (failures == 0)
     {
