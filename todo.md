@@ -75,3 +75,22 @@ This checklist tracks code-review findings and implementation work items.
   - Acceptance:
     - Scheduled playback messages route only to the selected single output.
     - No per-track/per-module routing dependencies introduced.
+
+## Priority 5 - Per-track mix controls
+
+- [x] Add per-track mix domain + processor and source-track playback tagging.
+  - Files: `src/playback/TrackMixState.h`, `src/playback/TrackMixProcessor.h`, `src/playback/MidiFilePlaybackEngineAdapter.h`
+  - Acceptance:
+    - Scheduled events carry `sourceTrackIndex`.
+    - Playback mix gate supports mute/solo precedence.
+    - Track volume scales note-on and CC7/CC11 messages.
+- [x] Add Tracks tab UI for grouped Volume/Mute/Solo controls.
+  - Files: `src/app/TracksTabComponent.h`, `src/app/AppTabsHost.h`, `src/app/MainComponent.h`
+  - Acceptance:
+    - New `Tracks` tab appears beside `Score` and `Player`.
+    - Eligible tracks show bordered groups named by track with volume slider and mute/solo checkboxes.
+- [x] Persist per-song track mix values in preset profile.
+  - Files: `src/app/MainComponent.h`
+  - Acceptance:
+    - `ui_preset.json` stores/loads `trackMixBySong` keyed by song path.
+    - Track mix changes auto-save while editing and reapply on reload.

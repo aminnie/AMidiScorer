@@ -34,10 +34,15 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Tabbed workspace:
   - `Score` tab for notation/chord controls and renderers
   - `Player` tab for transport controls and MIDI output selection
+  - `Tracks` tab for per-track Volume/Mute/Solo controls
 - MIDI player and output:
   - MIDI file playback events are scheduled from file time and dispatched on the same transport timeline that drives live score/chord updates
   - single selected MIDI output device (GM-oriented output path)
   - persisted selected output device identifier under `Documents/MidiScorer/midi_output.json`
+- Per-track playback mix:
+  - per eligible MIDI track controls for volume (0..127), mute, and solo
+  - grouped controls by track name in the `Tracks` tab
+  - per-song track mix persistence in `Documents/MidiScorer/ui_preset.json` under `trackMixBySong`
 - Display options:
   - `Light Score` / dark score toggle (Light Score is default)
   - status line includes Sig, Tempo, Key, and Bar
@@ -51,9 +56,10 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 
 - `CMakeLists.txt` - JUCE/CMake project setup
 - `Main.cpp` - JUCE application entry point
-- `src/app/AppTabsHost.h` - top-level tab container (`Score` + `Player`)
+- `src/app/AppTabsHost.h` - top-level tab container (`Score` + `Player` + `Tracks`)
 - `src/app/MainComponent.h` - score page UI controls, notation orchestration, playback sync
 - `src/app/PlayerTabComponent.h` - player page transport and MIDI output controls
+- `src/app/TracksTabComponent.h` - track mix page (per-track Volume/Mute/Solo)
 - `src/midi/TempoMap.h` - tempo/time-signature/bar conversion
 - `src/midi/TrackNoteExtractor.h` - note-on/note-off pairing
 - `src/midi/MidiProjectLoader.h` - MIDI ingestion and metadata extraction
@@ -66,6 +72,8 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - `src/playback/IPlaybackPositionSource.h` - transport position abstraction boundary
 - `src/playback/MidiFilePlaybackEngineAdapter.h` - scheduled MIDI-event playback adapter
 - `src/playback/MidiOutputDevice.h` - single-output MIDI device abstraction
+- `src/playback/TrackMixState.h` - per-track volume/mute/solo state
+- `src/playback/TrackMixProcessor.h` - playback gating and per-track message scaling
 - `tests/test_main.cpp` - core tests
 - `tests/fixtures/` - fixture specs/documentation
 
@@ -110,7 +118,8 @@ ctest --test-dir build -C Debug --output-on-failure
    - score color mode
 7. Use **Score** tab to view/edit notation options and track assignments.
 8. Use **Player** tab to select an output device, then Play/Pause/Stop.
-9. Use **Seek** or **Play From Bar** in the Player tab to scrub/start from a specific bar.
+9. Use **Tracks** tab to adjust per-track Volume, Mute, and Solo.
+10. Use **Seek** or **Play From Bar** in the Player tab to scrub/start from a specific bar.
 
 ## Notes and known limitations
 
@@ -119,7 +128,8 @@ ctest --test-dir build -C Debug --output-on-failure
 - Rests, beaming, and accidental handling are practical approximations, not full engraving rules.
 - Chord detection uses deterministic template scoring and may be ambiguous for dense voicings.
 - Playback drives visual sync and optional MIDI output from one shared timeline.
-- Output is intentionally limited to a single GM-oriented MIDI destination (no per-track/device routing yet).
+- Output is intentionally limited to a single GM-oriented MIDI destination.
+- Track mix controls apply per source MIDI track and affect note-on velocity plus CC7/CC11 scaling.
 
 ## Developer notes
 

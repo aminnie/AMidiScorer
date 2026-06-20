@@ -11,6 +11,7 @@ public:
     struct ScheduledEvent
     {
         double playbackTimeSeconds = 0.0;
+        int sourceTrackIndex = -1;
         juce::MidiMessage message;
     };
 
@@ -56,7 +57,7 @@ public:
                 if (message.isMetaEvent() || message.isEndOfTrackMetaEvent())
                     continue;
 
-                events.push_back({ juce::jmax(0.0, message.getTimeStamp()), message });
+                events.push_back({ juce::jmax(0.0, message.getTimeStamp()), track, message });
             }
         }
 
@@ -87,7 +88,7 @@ public:
         lastProcessedPlaybackSec = clamped;
     }
 
-    ProcessResult processUntilPlaybackTime(double playbackSec, const std::function<void(const juce::MidiMessage&)>& sink)
+    ProcessResult processUntilPlaybackTime(double playbackSec, const std::function<void(const ScheduledEvent&)>& sink)
     {
         ProcessResult result;
         if (sink == nullptr)
@@ -100,7 +101,7 @@ public:
         while (nextEventIndex < static_cast<int>(events.size())
                && events[(size_t) nextEventIndex].playbackTimeSeconds <= targetSec)
         {
-            sink(events[(size_t) nextEventIndex].message);
+            sink(events[(size_t) nextEventIndex]);
             ++nextEventIndex;
             ++result.emittedEventCount;
         }

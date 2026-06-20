@@ -13,6 +13,8 @@
 #include "../playback/PlaybackController.h"
 #include "../playback/MidiFilePlaybackEngineAdapter.h"
 #include "../playback/MidiOutputDevice.h"
+#include "../playback/TrackMixProcessor.h"
+#include "../playback/TrackMixState.h"
 
 class MainComponent final : public juce::Component,
                             private juce::Timer
@@ -271,6 +273,64 @@ public:
     juce::String getLoadedMidiFileName() const
     {
         return project.file.existsAsFile() ? project.file.getFileName() : juce::String();
+    }
+
+    int getTrackMixTrackCount() const
+    {
+        return static_cast<int>(project.tracks.size());
+    }
+
+    bool isTrackMixEligible(int trackIndex) const
+    {
+        if (trackIndex < 0 || trackIndex >= static_cast<int>(project.tracks.size()))
+            return false;
+        return trackHasChordSourceContent(project.tracks[(size_t) trackIndex]);
+    }
+
+    juce::String getTrackDisplayName(int trackIndex) const
+    {
+        if (trackIndex < 0 || trackIndex >= static_cast<int>(project.tracks.size()))
+            return {};
+        return project.tracks[(size_t) trackIndex].name;
+    }
+
+    int getTrackMixVolume(int trackIndex) const
+    {
+        return trackMixState.getVolume(trackIndex);
+    }
+
+    bool isTrackMuted(int trackIndex) const
+    {
+        return trackMixState.isMuted(trackIndex);
+    }
+
+    bool isTrackSolo(int trackIndex) const
+    {
+        return trackMixState.isSolo(trackIndex);
+    }
+
+    void setTrackMixVolume(int trackIndex, int volume)
+    {
+        if (!trackMixState.isValidTrack(trackIndex))
+            return;
+        trackMixState.setVolume(trackIndex, volume);
+        onTrackMixStateChanged();
+    }
+
+    void setTrackMuted(int trackIndex, bool muted)
+    {
+        if (!trackMixState.isValidTrack(trackIndex))
+            return;
+        trackMixState.setMuted(trackIndex, muted);
+        onTrackMixStateChanged();
+    }
+
+    void setTrackSolo(int trackIndex, bool solo)
+    {
+        if (!trackMixState.isValidTrack(trackIndex))
+            return;
+        trackMixState.setSolo(trackIndex, solo);
+        onTrackMixStateChanged();
     }
 
     std::vector<MidiOutputDeviceInfo> getAvailableMidiOutputs() const
@@ -633,6 +693,14 @@ private:
         return false;
     }
 
+    void onTrackMixStateChanged()
+    {
+        if (playbackController.isPlaying())
+            midiOutputDevice.sendAllNotesOff();
+        saveUiPreset(false);
+        refreshStatusMessage();
+    }
+
     int getChordTracksLayoutHeight(int availableWidth) const
     {
         const int labelWidth = 110;
@@ -843,16 +911,21 @@ private:
         file.replaceWithText(juce::JSON::toString(juce::var(obj.release())));
     }
 
-    juce::String getSongPresetTempoKey() const
+    juce::String getSongPresetKey() const
     {
         if (!project.file.existsAsFile())
             return {};
         return project.file.getFullPathName().replaceCharacter('\\', '/').toLowerCase();
     }
 
+    juce::String getSongPresetTempoKey() const
+    {
+        return getSongPresetKey();
+    }
+
     juce::String getSongTempoOverrideFromPreset(const juce::DynamicObject& preset) const
     {
-        const auto songKey = getSongPresetTempoKey();
+        const auto songKey = getSongPresetKey();
         if (songKey.isEmpty() || !preset.hasProperty("tempoOverridesBySong"))
             return {};
 
@@ -868,7 +941,57 @@ private:
         return overridesObj->getProperty(songId).toString().trim();
     }
 
-    void saveUiPreset()
+    void applyTrackMixFromPreset(const juce::DynamicObject& preset)
+    {
+        trackMixState.resizeForTrackCount(static_cast<int>(project.tracks.size()));
+        const auto songKey = getSongPresetKey();
+        if (songKey.isEmpty() || !preset.hasProperty("trackMixBySong"))
+            return;
+
+        auto* mixBySong = preset.getProperty("trackMixBySong").getDynamicObject();
+        if (mixBySong == nullptr)
+            return;
+
+        const juce::Identifier songId(songKey);
+        if (!mixBySong->hasProperty(songId))
+            return;
+
+        const auto entriesVar = mixBySong->getProperty(songId);
+        auto* entries = entriesVar.getArray();
+        if (entries == nullptr)
+            return;
+
+        const int limit = juce::jmin(trackMixState.getTrackCount(), entries->size());
+        for (int i = 0; i < limit; ++i)
+        {
+            auto* entryObj = entries->getReference(i).getDynamicObject();
+            if (entryObj == nullptr)
+                continue;
+
+            if (entryObj->hasProperty("volume"))
+                trackMixState.setVolume(i, static_cast<int>(entryObj->getProperty("volume")));
+            if (entryObj->hasProperty("mute"))
+                trackMixState.setMuted(i, static_cast<bool>(entryObj->getProperty("mute")));
+            if (entryObj->hasProperty("solo"))
+                trackMixState.setSolo(i, static_cast<bool>(entryObj->getProperty("solo")));
+        }
+    }
+
+    juce::var buildTrackMixPresetEntries() const
+    {
+        juce::Array<juce::var> entries;
+        for (int i = 0; i < trackMixState.getTrackCount(); ++i)
+        {
+            auto entry = std::make_unique<juce::DynamicObject>();
+            entry->setProperty("volume", trackMixState.getVolume(i));
+            entry->setProperty("mute", trackMixState.isMuted(i));
+            entry->setProperty("solo", trackMixState.isSolo(i));
+            entries.add(juce::var(entry.release()));
+        }
+        return juce::var(entries);
+    }
+
+    void saveUiPreset(bool showStatusMessage = true)
     {
         auto obj = std::make_unique<juce::DynamicObject>();
         obj->setProperty("staff1Track", staff1TrackSelector.getSelectedItemIndex());
@@ -890,6 +1013,7 @@ private:
             obj->setProperty("lastMidiDirectory", lastMidiDirectory.getFullPathName());
 
         auto tempoOverridesBySong = std::make_unique<juce::DynamicObject>();
+        auto trackMixBySong = std::make_unique<juce::DynamicObject>();
         const auto file = getPresetFilePath();
         if (file.existsAsFile())
         {
@@ -906,11 +1030,18 @@ private:
                         for (const auto& prop : existingOverridesObj->getProperties())
                             tempoOverridesBySong->setProperty(prop.name, prop.value);
                     }
+
+                    const auto existingTrackMixVar = existingObj->getProperty("trackMixBySong");
+                    if (auto* existingTrackMixObj = existingTrackMixVar.getDynamicObject())
+                    {
+                        for (const auto& prop : existingTrackMixObj->getProperties())
+                            trackMixBySong->setProperty(prop.name, prop.value);
+                    }
                 }
             }
         }
 
-        const auto songKey = getSongPresetTempoKey();
+        const auto songKey = getSongPresetKey();
         if (songKey.isNotEmpty())
         {
             const juce::Identifier songId(songKey);
@@ -919,14 +1050,24 @@ private:
                 tempoOverridesBySong->setProperty(songId, songTempoText);
             else
                 tempoOverridesBySong->removeProperty(songId);
+
+            trackMixBySong->setProperty(songId, buildTrackMixPresetEntries());
         }
         obj->setProperty("tempoOverridesBySong", juce::var(tempoOverridesBySong.release()));
+        obj->setProperty("trackMixBySong", juce::var(trackMixBySong.release()));
 
         const juce::var payload(obj.release());
-        if (file.replaceWithText(juce::JSON::toString(payload)))
-            setStatusMessage("Preset saved: " + file.getFullPathName());
+        if (showStatusMessage)
+        {
+            if (file.replaceWithText(juce::JSON::toString(payload)))
+                setStatusMessage("Preset saved: " + file.getFullPathName());
+            else
+                setStatusMessage("Failed to save preset.");
+        }
         else
-            setStatusMessage("Failed to save preset.");
+        {
+            (void) file.replaceWithText(juce::JSON::toString(payload));
+        }
     }
 
     bool loadUiPreset(bool silent = false)
@@ -1007,6 +1148,7 @@ private:
                 tempoOverrideInput.setText({}, juce::dontSendNotification);
         }
         applyTempoOverrideFromInput(false);
+        applyTrackMixFromPreset(*obj);
         applyScoreColorScheme();
 
         rebuildAllStaffs();
@@ -1067,10 +1209,16 @@ private:
         }
 
         const double elapsedSec = playbackPositionSource->getElapsedSeconds();
-        auto midiDispatch = midiPlaybackEngine.processUntilPlaybackTime(elapsedSec, [this](const juce::MidiMessage& message)
+        auto midiDispatch = midiPlaybackEngine.processUntilPlaybackTime(
+            elapsedSec,
+            [this](const MidiFilePlaybackEngineAdapter::ScheduledEvent& event)
         {
-            midiOutputDevice.sendMessageNow(message);
-        });
+                if (!TrackMixProcessor::shouldSendTrack(event.sourceTrackIndex, trackMixState))
+                    return;
+
+                const auto mixedMessage = TrackMixProcessor::applyVolumeToMessage(event.message, event.sourceTrackIndex, trackMixState);
+                midiOutputDevice.sendMessageNow(mixedMessage);
+            });
         if (midiDispatch.reachedEndOfStream && !midiPlaybackEngine.hasPendingEvents())
         {
             stopPlayback(false);
@@ -1172,6 +1320,7 @@ private:
             }
 
             project = std::move(loaded);
+            trackMixState.resizeForTrackCount(static_cast<int>(project.tracks.size()));
             updateWindowTitle();
             refreshTrackSelectors();
             refreshChordTrackButtons();
@@ -1549,6 +1698,7 @@ private:
     IPlaybackPositionSource* playbackPositionSource = &playbackController;
     MidiFilePlaybackEngineAdapter midiPlaybackEngine;
     MidiOutputDevice midiOutputDevice;
+    TrackMixState trackMixState;
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File lastMidiDirectory;
     bool continueArmed = false;

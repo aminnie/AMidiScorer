@@ -23,12 +23,15 @@ Core modules:
 - `src/notation/ScoreModel.h` - score-domain symbols (notes, rests, ties, chords)
 - `src/notation/ScoreRenderer.h` - drawing engine for staff notation
 - `src/harmony/ChordDetector.h` - chord-template detection and naming
-- `src/app/AppTabsHost.h` - top-level tab host (`Score`, `Player`)
+- `src/app/AppTabsHost.h` - top-level tab host (`Score`, `Player`, `Tracks`)
 - `src/app/MainComponent.h` - score-page orchestration, UI state, playback sync
 - `src/app/PlayerTabComponent.h` - player-page transport and MIDI output UI
+- `src/app/TracksTabComponent.h` - per-track mix UI (volume/mute/solo)
 - `src/playback/IPlaybackPositionSource.h` - transport position abstraction
 - `src/playback/MidiFilePlaybackEngineAdapter.h` - scheduled MIDI event engine adapter
 - `src/playback/MidiOutputDevice.h` - single MIDI output device abstraction
+- `src/playback/TrackMixState.h` - per-track mix state container
+- `src/playback/TrackMixProcessor.h` - per-track playback filtering/scaling
 
 ## 2) End-to-end data flow
 
@@ -43,6 +46,7 @@ Core modules:
    - builds score bars via `ScoreModel::build()`
 5. `ScoreRenderer` paints rolling 5-bar windows centered on current playback bar.
 6. During playback, `timerCallback()` updates current bar/live chord markers and dispatches scheduled MIDI events to the selected output device.
+7. Before dispatch, each event is filtered/scaled by track mix state (mute/solo gate + volume scaling).
 
 ## 2.1) Playback and output architecture
 
@@ -54,6 +58,19 @@ The player path is intentionally loosely coupled:
 - `PlayerTabComponent` controls transport and output selection without embedding scoring logic.
 
 This keeps the scorer and player separable for future reuse in a tabbed host such as AMidiOrganOrg.
+
+## 2.2) Per-track playback mix
+
+Track mix is source-track based (not MIDI-channel strip based):
+
+- `MidiFilePlaybackEngineAdapter::ScheduledEvent` now carries `sourceTrackIndex`.
+- `TrackMixState` holds per-track `volume`, `muted`, and `solo`.
+- `TrackMixProcessor` applies:
+  - solo precedence (if any solo active, only solo tracks pass),
+  - mute blocking when no solo is active,
+  - volume scaling for note-on velocity and CC7/CC11 controller values.
+- `TracksTabComponent` exposes grouped controls by track name.
+- `MainComponent` persists per-song mix entries in `ui_preset.json` under `trackMixBySong` keyed by normalized song path.
 
 ## 3) Note scoring design
 

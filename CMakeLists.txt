@@ -50,6 +50,7 @@ target_sources(MidiScorer
         src/app/AppTabsHost.h
         src/app/MainComponent.h
         src/app/PlayerTabComponent.h
+        src/app/TracksTabComponent.h
         src/midi/MidiProjectLoader.h
         src/midi/TempoMap.h
         src/midi/TrackNoteExtractor.h
@@ -62,6 +63,8 @@ target_sources(MidiScorer
         src/playback/PlaybackController.h
         src/playback/MidiFilePlaybackEngineAdapter.h
         src/playback/MidiOutputDevice.h
+        src/playback/TrackMixState.h
+        src/playback/TrackMixProcessor.h
 )
 
 target_include_directories(MidiScorer
@@ -106,6 +109,8 @@ target_sources(MidiScorerTests
         src/midi/TempoMap.h
         src/notation/Quantizer.h
         src/harmony/ChordDetector.h
+        src/playback/TrackMixState.h
+        src/playback/TrackMixProcessor.h
 )
 
 target_include_directories(MidiScorerTests

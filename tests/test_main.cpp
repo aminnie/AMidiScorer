@@ -6,6 +6,7 @@
 #include "../src/notation/ScoreModel.h"
 #include "../src/harmony/ChordDetector.h"
 #include "../src/playback/MidiFilePlaybackEngineAdapter.h"
+#include "../src/playback/TrackMixProcessor.h"
 
 namespace
 {
@@ -297,15 +298,42 @@ void testMidiPlaybackAdapterSeekAndDispatch()
     juce::String error;
     expectTrue(adapter.loadFromFile(file, error), "Playback adapter loads MIDI fixture");
     expectTrue(adapter.getEventCount() >= 2, "Playback adapter stores scheduled note events");
+    if (!adapter.getEvents().empty())
+        expectTrue(adapter.getEvents().front().sourceTrackIndex == 0, "Playback adapter stores source track index");
 
     int emitted = 0;
-    auto result0 = adapter.processUntilPlaybackTime(0.0, [&](const juce::MidiMessage&) { ++emitted; });
+    auto result0 = adapter.processUntilPlaybackTime(0.0, [&](const MidiFilePlaybackEngineAdapter::ScheduledEvent&) { ++emitted; });
     expectTrue(result0.emittedEventCount == 1, "Playback adapter emits note-on at start");
 
     adapter.seekToPlaybackTime(0.45);
     emitted = 0;
-    auto result1 = adapter.processUntilPlaybackTime(0.5, [&](const juce::MidiMessage&) { ++emitted; });
+    auto result1 = adapter.processUntilPlaybackTime(0.5, [&](const MidiFilePlaybackEngineAdapter::ScheduledEvent&) { ++emitted; });
     expectTrue(result1.emittedEventCount >= 1, "Playback adapter emits note-off after seek");
+}
+
+void testTrackMixProcessor()
+{
+    TrackMixState state;
+    state.resizeForTrackCount(3);
+
+    expectTrue(TrackMixProcessor::shouldSendTrack(0, state), "Track mix sends unmuted track by default");
+    state.setMuted(0, true);
+    expectTrue(!TrackMixProcessor::shouldSendTrack(0, state), "Track mix blocks muted track when no solo");
+
+    state.setSolo(1, true);
+    expectTrue(!TrackMixProcessor::shouldSendTrack(0, state), "Track mix blocks non-solo track when solo active");
+    expectTrue(TrackMixProcessor::shouldSendTrack(1, state), "Track mix allows active solo track");
+
+    state.setVolume(1, 64);
+    auto noteOn = juce::MidiMessage::noteOn(1, 60, (juce::uint8) 100);
+    auto scaledNote = TrackMixProcessor::applyVolumeToMessage(noteOn, 1, state);
+    expectTrue(scaledNote.isNoteOn(), "Track mix preserves note-on type");
+    expectTrue(scaledNote.getVelocity() < noteOn.getVelocity(), "Track mix scales note-on velocity");
+
+    auto cc7 = juce::MidiMessage::controllerEvent(1, 7, 100);
+    auto scaledCc7 = TrackMixProcessor::applyVolumeToMessage(cc7, 1, state);
+    expectTrue(scaledCc7.isController() && scaledCc7.getControllerNumber() == 7, "Track mix preserves CC7 type");
+    expectTrue(scaledCc7.getControllerValue() < cc7.getControllerValue(), "Track mix scales CC7 value");
 }
 }
 
@@ -321,6 +349,7 @@ int main()
     testScoreModelNormalizesChordQuarterInBar();
     testWindowClampBehaviorForScoreWindow();
     testMidiPlaybackAdapterSeekAndDispatch();
+    testTrackMixProcessor();
 
     if (failures == 0)
     {
