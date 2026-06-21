@@ -24,6 +24,11 @@ public:
     {
         addAndMakeVisible(loadButton);
         loadButton.setButtonText("Load MIDI");
+        loadButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+        loadButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+        loadButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff8aa3b6));
+        loadButton.setColour(juce::TextButton::buttonOnColourId,
+                             juce::Colour(0xff8aa3b6).interpolatedWith(juce::Colours::black, 0.10f));
         loadButton.onClick = [this] { loadMidiFile(); };
 
         addAndMakeVisible(staff1TrackLabel);
@@ -201,10 +206,9 @@ public:
         accidentalSelector.setBounds(row.removeFromLeft(120).reduced(4, 0));
         accidentalHelpButton.setBounds(row.removeFromLeft(28).reduced(4, 0));
         aliasSelector.setBounds(row.removeFromLeft(136).reduced(4, 0));
-        globalTransposeLabel.setBounds(row.removeFromLeft(74));
-        globalTransposeInput.setBounds(row.removeFromLeft(48).reduced(4, 0));
-        transposeHelpButton.setBounds(row.removeFromLeft(28).reduced(4, 0));
         scoreColorToggle.setBounds(row.removeFromLeft(106).reduced(4, 0));
+        savePresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
+        loadPresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
         chordTracksLabel.setBounds(row.removeFromLeft(110));
 
         area.removeFromTop(6);
@@ -228,14 +232,15 @@ public:
 
         area.removeFromTop(6);
         auto statusRow = area.removeFromTop(24);
-        savePresetButton.setBounds(statusRow.removeFromLeft(100).reduced(4, 0));
-        loadPresetButton.setBounds(statusRow.removeFromLeft(100).reduced(4, 0));
         tempoOverrideLabel.setBounds(statusRow.removeFromLeft(50));
         tempoOverrideInput.setBounds(statusRow.removeFromLeft(72).reduced(4, 0));
         tempoHelpButton.setBounds(statusRow.removeFromLeft(28).reduced(4, 0));
         keyOverrideLabel.setBounds(statusRow.removeFromLeft(36));
         keyOverrideInput.setBounds(statusRow.removeFromLeft(68).reduced(4, 0));
         keyHelpButton.setBounds(statusRow.removeFromLeft(28).reduced(4, 0));
+        globalTransposeLabel.setBounds(statusRow.removeFromLeft(74));
+        globalTransposeInput.setBounds(statusRow.removeFromLeft(48).reduced(4, 0));
+        transposeHelpButton.setBounds(statusRow.removeFromLeft(28).reduced(4, 0));
         statusLabel.setBounds(statusRow);
         area.removeFromTop(8);
 
@@ -300,6 +305,11 @@ public:
         return trackMixState.getVolume(trackIndex);
     }
 
+    int getTrackMixReverb(int trackIndex) const
+    {
+        return trackMixState.getReverb(trackIndex);
+    }
+
     bool isTrackMuted(int trackIndex) const
     {
         return trackMixState.isMuted(trackIndex);
@@ -315,6 +325,14 @@ public:
         if (!trackMixState.isValidTrack(trackIndex))
             return;
         trackMixState.setVolume(trackIndex, volume);
+        onTrackMixStateChanged();
+    }
+
+    void setTrackMixReverb(int trackIndex, int reverb)
+    {
+        if (!trackMixState.isValidTrack(trackIndex))
+            return;
+        trackMixState.setReverb(trackIndex, reverb);
         onTrackMixStateChanged();
     }
 
@@ -1168,6 +1186,8 @@ private:
 
             if (entryObj->hasProperty("volume"))
                 trackMixState.setVolume(i, static_cast<int>(entryObj->getProperty("volume")));
+            if (entryObj->hasProperty("reverb"))
+                trackMixState.setReverb(i, static_cast<int>(entryObj->getProperty("reverb")));
             if (entryObj->hasProperty("mute"))
                 trackMixState.setMuted(i, static_cast<bool>(entryObj->getProperty("mute")));
             if (entryObj->hasProperty("solo"))
@@ -1182,6 +1202,7 @@ private:
         {
             auto entry = std::make_unique<juce::DynamicObject>();
             entry->setProperty("volume", trackMixState.getVolume(i));
+            entry->setProperty("reverb", trackMixState.getReverb(i));
             entry->setProperty("mute", trackMixState.isMuted(i));
             entry->setProperty("solo", trackMixState.isSolo(i));
             entries.add(juce::var(entry.release()));
@@ -1943,12 +1964,29 @@ private:
         transportToggleButton.setButtonText(playbackController.isPlaying() ? "Stop" : "Start");
     }
 
+    void refreshTransportToggleButtonStyle(bool hasProject, bool isPlaying)
+    {
+        const auto readyOff = juce::Colours::darkgreen;
+        const auto readyOn = juce::Colours::darkgreen.brighter();
+        const auto playingOff = juce::Colours::darkred;
+        const auto playingOn = juce::Colours::darkred.brighter();
+        const auto disabled = juce::Colours::darkgrey;
+
+        transportToggleButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+        transportToggleButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+        transportToggleButton.setColour(juce::TextButton::buttonColourId,
+                                        hasProject ? (isPlaying ? playingOff : readyOff) : disabled);
+        transportToggleButton.setColour(juce::TextButton::buttonOnColourId,
+                                        hasProject ? (isPlaying ? playingOn : readyOn) : disabled);
+    }
+
     void updateTransportControls()
     {
         const bool hasProject = !project.tracks.empty();
         const bool isPlaying = playbackController.isPlaying();
         transportToggleButton.setEnabled(hasProject);
         refreshTransportToggleButtonText();
+        refreshTransportToggleButtonStyle(hasProject, isPlaying);
         continueButton.setEnabled(hasProject && !isPlaying && continueArmed);
         continueBarInput.setEnabled(hasProject && !isPlaying && continueArmed);
     }

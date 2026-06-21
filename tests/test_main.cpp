@@ -334,6 +334,13 @@ void testTrackMixProcessor()
     auto scaledCc7 = TrackMixProcessor::applyVolumeToMessage(cc7, 1, state);
     expectTrue(scaledCc7.isController() && scaledCc7.getControllerNumber() == 7, "Track mix preserves CC7 type");
     expectTrue(scaledCc7.getControllerValue() < cc7.getControllerValue(), "Track mix scales CC7 value");
+
+    state.setReverb(1, 64);
+    auto cc91 = juce::MidiMessage::controllerEvent(1, TrackMixProcessor::kReverbController, 100);
+    auto scaledCc91 = TrackMixProcessor::applyVolumeToMessage(cc91, 1, state);
+    expectTrue(scaledCc91.isController() && scaledCc91.getControllerNumber() == TrackMixProcessor::kReverbController,
+               "Track mix preserves CC91 type");
+    expectTrue(scaledCc91.getControllerValue() < cc91.getControllerValue(), "Track mix scales CC91 value");
 }
 }
 

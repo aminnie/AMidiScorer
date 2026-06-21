@@ -58,9 +58,21 @@ private:
         std::unique_ptr<juce::GroupComponent> group;
         std::unique_ptr<juce::Label> volumeLabel;
         std::unique_ptr<juce::Slider> volumeSlider;
+        std::unique_ptr<juce::Label> reverbLabel;
+        std::unique_ptr<juce::Slider> reverbSlider;
         std::unique_ptr<juce::ToggleButton> muteToggle;
         std::unique_ptr<juce::ToggleButton> soloToggle;
     };
+
+    static void styleMixSlider(juce::Slider& slider)
+    {
+        slider.setColour(juce::Slider::backgroundColourId, juce::Colours::dimgrey);
+        slider.setColour(juce::Slider::trackColourId, juce::Colours::antiquewhite);
+        slider.setColour(juce::Slider::thumbColourId, juce::Colours::darkred.brighter());
+        slider.setColour(juce::Slider::textBoxTextColourId, juce::Colours::antiquewhite);
+        slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    }
 
     void timerCallback() override
     {
@@ -104,6 +116,7 @@ private:
         {
             signature << "|" << scorePage.getTrackDisplayName(i)
                       << "|" << juce::String(scorePage.getTrackMixVolume(i))
+                      << "|" << juce::String(scorePage.getTrackMixReverb(i))
                       << "|" << juce::String(scorePage.isTrackMuted(i) ? 1 : 0)
                       << "|" << juce::String(scorePage.isTrackSolo(i) ? 1 : 0);
         }
@@ -147,9 +160,7 @@ private:
             row->volumeSlider->setRange(0.0, 127.0, 1.0);
             row->volumeSlider->setSliderStyle(juce::Slider::LinearHorizontal);
             row->volumeSlider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
-            row->volumeSlider->setColour(juce::Slider::backgroundColourId, juce::Colours::dimgrey);
-            row->volumeSlider->setColour(juce::Slider::trackColourId, juce::Colours::green.darker());
-            row->volumeSlider->setColour(juce::Slider::thumbColourId, juce::Colours::darkred.brighter());
+            styleMixSlider(*row->volumeSlider);
             row->volumeSlider->setValue(scorePage.getTrackMixVolume(i), juce::dontSendNotification);
             row->volumeSlider->onValueChange = [this, idx = i, slider = row->volumeSlider.get()]
             {
@@ -157,6 +168,24 @@ private:
                 trackSignature = buildTrackSignature();
             };
             content.addAndMakeVisible(*row->volumeSlider);
+
+            row->reverbLabel = std::make_unique<juce::Label>();
+            row->reverbLabel->setText("Reverb", juce::dontSendNotification);
+            row->reverbLabel->setJustificationType(juce::Justification::centredRight);
+            content.addAndMakeVisible(*row->reverbLabel);
+
+            row->reverbSlider = std::make_unique<juce::Slider>();
+            row->reverbSlider->setRange(0.0, 127.0, 1.0);
+            row->reverbSlider->setSliderStyle(juce::Slider::LinearHorizontal);
+            row->reverbSlider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
+            styleMixSlider(*row->reverbSlider);
+            row->reverbSlider->setValue(scorePage.getTrackMixReverb(i), juce::dontSendNotification);
+            row->reverbSlider->onValueChange = [this, idx = i, slider = row->reverbSlider.get()]
+            {
+                scorePage.setTrackMixReverb(idx, static_cast<int>(std::round(slider->getValue())));
+                trackSignature = buildTrackSignature();
+            };
+            content.addAndMakeVisible(*row->reverbSlider);
 
             row->muteToggle = std::make_unique<juce::ToggleButton>("Mute");
             row->muteToggle->setToggleState(scorePage.isTrackMuted(i), juce::dontSendNotification);
@@ -231,7 +260,7 @@ private:
         auto bounds = viewport.getLocalBounds();
         const int rowHeight = 84;
         const int gap = 6;
-        const int contentWidth = juce::jmax(560, bounds.getWidth() - 20);
+        const int contentWidth = juce::jmax(760, bounds.getWidth() - 20);
         int y = 0;
 
         for (auto& row : rows)
@@ -240,10 +269,12 @@ private:
             row->group->setBounds(rowArea);
             auto controls = rowArea.reduced(12, 30);
 
-            row->volumeLabel->setBounds(controls.removeFromLeft(72));
-            row->volumeSlider->setBounds(controls.removeFromLeft(280).reduced(4, 0));
             row->muteToggle->setBounds(controls.removeFromLeft(88).reduced(4, 0));
             row->soloToggle->setBounds(controls.removeFromLeft(88).reduced(4, 0));
+            row->volumeLabel->setBounds(controls.removeFromLeft(72));
+            row->volumeSlider->setBounds(controls.removeFromLeft(220).reduced(4, 0));
+            row->reverbLabel->setBounds(controls.removeFromLeft(64));
+            row->reverbSlider->setBounds(controls.removeFromLeft(220).reduced(4, 0));
             y += rowHeight + gap;
         }
 

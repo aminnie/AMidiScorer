@@ -15,8 +15,8 @@ public:
     {
         addAndMakeVisible(tabs);
         const auto defaultTabColour = findColour(juce::ResizableWindow::backgroundColourId);
-        tabs.addTab("Score", defaultTabColour, &scoreTab, false);
         tabs.addTab("Player", defaultTabColour, &playerTab, false);
+        tabs.addTab("Score", defaultTabColour, &scoreTab, false);
         tabs.addTab("Effects", defaultTabColour, &tracksTab, false);
         setSize(1280, 720);
     }
