@@ -25,7 +25,12 @@ Use these modules as the source of truth for each concern:
 - `src/notation/ScoreRenderer.h` - rendering only (visual layer)
 - `src/harmony/ChordDetector.h` - chord detection + naming policy
 - `src/playback/PlaybackController.h` - playback time/bar state
-- `src/app/MainComponent.h` - orchestration/UI wiring
+- `src/playback/TrackMixState.h` - per-track mix state
+- `src/playback/TrackMixProcessor.h` - playback mix gating/scaling
+- `src/playback/TrackMixMidiSeed.h` - CC7/CC91 seeding on load
+- `src/app/MainComponent.h` - orchestration/UI wiring (Score tab)
+- `src/app/TracksTabComponent.h` - Effects tab mix UI
+- `src/app/AppTabsHost.h` - tab host (`Player`, `Score`, `Effects`)
 
 ## Guardrails
 
@@ -76,6 +81,8 @@ ctest --test-dir build -C Debug --output-on-failure
 - Rest insertion gap fill behavior
 - Chord track checkbox mapping to source track indices
 - Renderer first-visible-bar clef/key-signature spacing
+- Track mix MIDI seeding vs saved `trackMixBySong` preset precedence
+- Save Preset dirty-state styling and score song-settings snapshot comparison
 
 ## Existing technical references
 

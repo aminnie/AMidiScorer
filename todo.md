@@ -94,3 +94,24 @@ This checklist tracks code-review findings and implementation work items.
   - Acceptance:
     - `ui_preset.json` stores/loads `trackMixBySong` keyed by song path.
     - Track mix changes auto-save while editing and reapply on reload.
+
+## Priority 6 - Effects mix enhancements
+
+- [x] Add per-track Reverb control with CC91 playback merge.
+  - Files: `src/playback/TrackMixState.h`, `src/playback/TrackMixProcessor.h`, `src/app/TracksTabComponent.h`, `src/app/MainComponent.h`
+  - Acceptance:
+    - Effects tab shows Reverb slider per eligible track.
+    - CC91 events merge with per-track reverb during playback.
+- [x] Seed Volume/Reverb sliders from MIDI track CC values.
+  - Files: `src/playback/TrackMixMidiSeed.h`, `src/app/MainComponent.h`, `tests/test_main.cpp`
+  - Acceptance:
+    - Last CC7/CC91 per track seeds slider values on load.
+    - Missing CC defaults to volume 100 / reverb 10.
+    - Saved `trackMixBySong` entries override seeded values.
+- [x] Score tab status and preset UX refinements.
+  - Files: `src/app/MainComponent.h`, `src/app/AppTabsHost.h`
+  - Acceptance:
+    - Tab order is Player → Score → Effects.
+    - Status line shows Sig before Bar; KeySrc indicates detected vs override key source.
+    - Save Preset highlights red when score song settings are dirty.
+    - Playback status messages: running/stopped/continuing without tempo-override suffix noise.

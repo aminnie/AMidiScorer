@@ -23,15 +23,16 @@ Core modules:
 - `src/notation/ScoreModel.h` - score-domain symbols (notes, rests, ties, chords)
 - `src/notation/ScoreRenderer.h` - drawing engine for staff notation
 - `src/harmony/ChordDetector.h` - chord-template detection and naming
-- `src/app/AppTabsHost.h` - top-level tab host (`Score`, `Player`, `Effects`)
+- `src/app/AppTabsHost.h` - top-level tab host (`Player`, `Score`, `Effects`)
 - `src/app/MainComponent.h` - score-page orchestration, UI state, playback sync
 - `src/app/PlayerTabComponent.h` - player-page transport and MIDI output UI
-- `src/app/TracksTabComponent.h` - per-track mix UI (volume/mute/solo)
+- `src/app/TracksTabComponent.h` - per-track mix UI (mute/solo/volume/reverb)
 - `src/playback/IPlaybackPositionSource.h` - transport position abstraction
 - `src/playback/MidiFilePlaybackEngineAdapter.h` - scheduled MIDI event engine adapter
 - `src/playback/MidiOutputDevice.h` - single MIDI output device abstraction
 - `src/playback/TrackMixState.h` - per-track mix state container
-- `src/playback/TrackMixProcessor.h` - per-track playback filtering/scaling
+- `src/playback/TrackMixProcessor.h` - per-track playback filtering/scaling/merge
+- `src/playback/TrackMixMidiSeed.h` - initialize mix from per-track CC7/CC91 on load
 
 ## 2) End-to-end data flow
 
@@ -63,14 +64,19 @@ This keeps the scorer and player separable for future reuse in a tabbed host suc
 
 Track mix is source-track based (not MIDI-channel strip based):
 
-- `MidiFilePlaybackEngineAdapter::ScheduledEvent` now carries `sourceTrackIndex`.
-- `TrackMixState` holds per-track `volume`, `muted`, and `solo`.
+- `MidiFilePlaybackEngineAdapter::ScheduledEvent` carries `sourceTrackIndex`.
+- `TrackMixState` holds per-track `volume`, `reverb`, `muted`, and `solo`.
+- `TrackMixMidiSeed` initializes mix on load:
+  - scans each project track sequence for the last CC7 (volume) and CC91 (reverb),
+  - uses defaults **100** / **10** when a controller is absent on that track,
+  - runs before preset overlay so saved values can override seeded values.
 - `TrackMixProcessor` applies:
   - solo precedence (if any solo active, only solo tracks pass),
   - mute blocking when no solo is active,
-  - volume scaling for note-on velocity and CC7/CC11 controller values.
-- `TracksTabComponent` exposes grouped controls by track name.
-- `MainComponent` persists per-song mix entries in `ui_preset.json` under `trackMixBySong` keyed by normalized song path.
+  - volume scaling for note-on velocity and CC7/CC11 controller values,
+  - reverb merge for CC91: `(fileValue * trackReverb) / 127`.
+- `TracksTabComponent` exposes grouped controls by track name (Mute, Solo, Volume, Reverb).
+- `MainComponent` persists per-song mix entries in `ui_preset.json` under `trackMixBySong` keyed by normalized song path; mix slider edits auto-save via `onTrackMixStateChanged()`.
 
 ## 3) Note scoring design
 
@@ -275,6 +281,19 @@ Important:
 
 - detected MIDI key uses major/minor conversion compatible with the tonic lookup helper
 - drum clef and channel-10 percussion remain untransposed
+
+## 5.1) Score status line
+
+`MainComponent::refreshStatusMessage()` composes the Score tab status label as:
+
+`Sig | Bar | {playback/status message} | Tempo | KeySrc`
+
+- **Sig** — time signature from tempo map (first signature event)
+- **Bar** — current bar / max bar
+- **Tempo** — detected BPM, with override text when tempo override is active
+- **KeySrc** — whether key used for notation/transposition is **detected** (MIDI key signature) or **override** (Key field)
+
+Playback messages include `Playback running`, `Playback stopped`, `Playback continuing from bar N`, and `Playback finished.`
 
 ## 6) Design constraints and trade-offs
 

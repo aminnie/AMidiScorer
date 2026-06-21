@@ -69,7 +69,8 @@ At minimum before submitting:
    - verify rolling bar playback updates
    - verify live chord marker changes only when chord changes
    - verify Stop pre-fills Continue bar and Continue resumes correctly
-   - verify Save/Load preset buttons remain usable from the status row
+   - verify Save/Load Preset on Score row 1 and Save Preset red dirty indicator
+   - verify Effects tab Mute/Solo/Volume/Reverb controls and CC-seeded defaults (100/10)
 
 ## PR checklist
 
