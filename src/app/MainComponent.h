@@ -311,6 +311,11 @@ public:
         return trackMixState.getReverb(trackIndex);
     }
 
+    int getTrackMixChannel(int trackIndex) const
+    {
+        return trackMixState.getChannel(trackIndex);
+    }
+
     bool isTrackMuted(int trackIndex) const
     {
         return trackMixState.isMuted(trackIndex);
@@ -334,6 +339,14 @@ public:
         if (!trackMixState.isValidTrack(trackIndex))
             return;
         trackMixState.setReverb(trackIndex, reverb);
+        onTrackMixStateChanged();
+    }
+
+    void setTrackMixChannel(int trackIndex, int channel)
+    {
+        if (!trackMixState.isValidTrack(trackIndex))
+            return;
+        trackMixState.setChannel(trackIndex, channel);
         onTrackMixStateChanged();
     }
 
@@ -1190,6 +1203,8 @@ private:
                 trackMixState.setVolume(i, static_cast<int>(entryObj->getProperty("volume")));
             if (entryObj->hasProperty("reverb"))
                 trackMixState.setReverb(i, static_cast<int>(entryObj->getProperty("reverb")));
+            if (entryObj->hasProperty("channel"))
+                trackMixState.setChannel(i, static_cast<int>(entryObj->getProperty("channel")));
             if (entryObj->hasProperty("mute"))
                 trackMixState.setMuted(i, static_cast<bool>(entryObj->getProperty("mute")));
             if (entryObj->hasProperty("solo"))
@@ -1205,6 +1220,7 @@ private:
             auto entry = std::make_unique<juce::DynamicObject>();
             entry->setProperty("volume", trackMixState.getVolume(i));
             entry->setProperty("reverb", trackMixState.getReverb(i));
+            entry->setProperty("channel", trackMixState.getChannel(i));
             entry->setProperty("mute", trackMixState.isMuted(i));
             entry->setProperty("solo", trackMixState.isSolo(i));
             entries.add(juce::var(entry.release()));

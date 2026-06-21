@@ -24,18 +24,26 @@ public:
                                                   int trackIndex,
                                                   const TrackMixState& mixState)
     {
-        if (!mixState.isValidTrack(trackIndex))
+        if (!mixState.isValidTrack(trackIndex) || message.isMetaEvent())
             return message;
 
+        const int outChannel = mixState.getChannel(trackIndex);
         const int trackVolume = mixState.getVolume(trackIndex);
         const float volumeGain = static_cast<float>(trackVolume) / 127.0f;
 
         if (message.isNoteOn())
         {
             const int scaledVelocity = juce::jlimit(0, 127, static_cast<int>(std::round(message.getVelocity() * volumeGain)));
-            auto transformed = juce::MidiMessage::noteOn(message.getChannel(),
+            auto transformed = juce::MidiMessage::noteOn(outChannel,
                                                          message.getNoteNumber(),
                                                          static_cast<juce::uint8>(scaledVelocity));
+            transformed.setTimeStamp(message.getTimeStamp());
+            return transformed;
+        }
+
+        if (message.isNoteOff())
+        {
+            auto transformed = juce::MidiMessage::noteOff(outChannel, message.getNoteNumber(), message.getVelocity());
             transformed.setTimeStamp(message.getTimeStamp());
             return transformed;
         }
@@ -46,7 +54,7 @@ public:
             if (controller == 7 || controller == 11)
             {
                 const int scaledValue = juce::jlimit(0, 127, static_cast<int>(std::round(message.getControllerValue() * volumeGain)));
-                auto transformed = juce::MidiMessage::controllerEvent(message.getChannel(), controller, scaledValue);
+                auto transformed = juce::MidiMessage::controllerEvent(outChannel, controller, scaledValue);
                 transformed.setTimeStamp(message.getTimeStamp());
                 return transformed;
             }
@@ -57,12 +65,28 @@ public:
                 const int mergedValue = juce::jlimit(0, 127,
                     static_cast<int>(std::round((static_cast<double>(message.getControllerValue())
                                                  * static_cast<double>(trackReverb)) / 127.0)));
-                auto transformed = juce::MidiMessage::controllerEvent(message.getChannel(), controller, mergedValue);
+                auto transformed = juce::MidiMessage::controllerEvent(outChannel, controller, mergedValue);
                 transformed.setTimeStamp(message.getTimeStamp());
                 return transformed;
             }
         }
 
-        return message;
+        if (message.isProgramChange())
+        {
+            auto transformed = juce::MidiMessage::programChange(outChannel, message.getProgramChangeNumber());
+            transformed.setTimeStamp(message.getTimeStamp());
+            return transformed;
+        }
+
+        if (message.isPitchWheel())
+        {
+            auto transformed = juce::MidiMessage::pitchWheel(outChannel, message.getPitchWheelValue());
+            transformed.setTimeStamp(message.getTimeStamp());
+            return transformed;
+        }
+
+        auto transformed = message;
+        transformed.setChannel(outChannel);
+        return transformed;
     }
 };

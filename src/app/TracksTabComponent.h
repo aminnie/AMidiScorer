@@ -60,6 +60,8 @@ private:
         std::unique_ptr<juce::Slider> volumeSlider;
         std::unique_ptr<juce::Label> reverbLabel;
         std::unique_ptr<juce::Slider> reverbSlider;
+        std::unique_ptr<juce::Label> channelLabel;
+        std::unique_ptr<juce::TextEditor> channelInput;
         std::unique_ptr<juce::ToggleButton> muteToggle;
         std::unique_ptr<juce::ToggleButton> soloToggle;
     };
@@ -117,6 +119,7 @@ private:
             signature << "|" << scorePage.getTrackDisplayName(i)
                       << "|" << juce::String(scorePage.getTrackMixVolume(i))
                       << "|" << juce::String(scorePage.getTrackMixReverb(i))
+                      << "|" << juce::String(scorePage.getTrackMixChannel(i))
                       << "|" << juce::String(scorePage.isTrackMuted(i) ? 1 : 0)
                       << "|" << juce::String(scorePage.isTrackSolo(i) ? 1 : 0);
         }
@@ -186,6 +189,25 @@ private:
                 trackSignature = buildTrackSignature();
             };
             content.addAndMakeVisible(*row->reverbSlider);
+
+            row->channelLabel = std::make_unique<juce::Label>();
+            row->channelLabel->setText("Chan", juce::dontSendNotification);
+            row->channelLabel->setJustificationType(juce::Justification::centredRight);
+            content.addAndMakeVisible(*row->channelLabel);
+
+            row->channelInput = std::make_unique<juce::TextEditor>();
+            row->channelInput->setInputRestrictions(2, "0123456789");
+            row->channelInput->setText(juce::String(scorePage.getTrackMixChannel(i)), juce::dontSendNotification);
+            row->channelInput->setJustification(juce::Justification::centred);
+            row->channelInput->onReturnKey = [this, idx = i, input = row->channelInput.get()]
+            {
+                applyChannelInput(idx, input);
+            };
+            row->channelInput->onFocusLost = [this, idx = i, input = row->channelInput.get()]
+            {
+                applyChannelInput(idx, input);
+            };
+            content.addAndMakeVisible(*row->channelInput);
 
             row->muteToggle = std::make_unique<juce::ToggleButton>("Mute");
             row->muteToggle->setToggleState(scorePage.isTrackMuted(i), juce::dontSendNotification);
@@ -260,7 +282,7 @@ private:
         auto bounds = viewport.getLocalBounds();
         const int rowHeight = 84;
         const int gap = 6;
-        const int contentWidth = juce::jmax(760, bounds.getWidth() - 20);
+        const int contentWidth = juce::jmax(860, bounds.getWidth() - 20);
         int y = 0;
 
         for (auto& row : rows)
@@ -269,16 +291,30 @@ private:
             row->group->setBounds(rowArea);
             auto controls = rowArea.reduced(12, 30);
 
+            row->channelLabel->setBounds(controls.removeFromLeft(40));
+            row->channelInput->setBounds(controls.removeFromLeft(44).reduced(4, 0));
             row->muteToggle->setBounds(controls.removeFromLeft(88).reduced(4, 0));
             row->soloToggle->setBounds(controls.removeFromLeft(88).reduced(4, 0));
             row->volumeLabel->setBounds(controls.removeFromLeft(72));
-            row->volumeSlider->setBounds(controls.removeFromLeft(220).reduced(4, 0));
+            row->volumeSlider->setBounds(controls.removeFromLeft(200).reduced(4, 0));
             row->reverbLabel->setBounds(controls.removeFromLeft(64));
-            row->reverbSlider->setBounds(controls.removeFromLeft(220).reduced(4, 0));
+            row->reverbSlider->setBounds(controls.removeFromLeft(200).reduced(4, 0));
             y += rowHeight + gap;
         }
 
         content.setSize(contentWidth, juce::jmax(y, bounds.getHeight()));
+    }
+
+    void applyChannelInput(int trackIndex, juce::TextEditor* input)
+    {
+        if (input == nullptr)
+            return;
+
+        const int parsed = input->getText().trim().getIntValue();
+        const int clamped = juce::jlimit(1, 16, parsed > 0 ? parsed : 1);
+        input->setText(juce::String(clamped), juce::dontSendNotification);
+        scorePage.setTrackMixChannel(trackIndex, clamped);
+        trackSignature = buildTrackSignature();
     }
 
     MainComponent& scorePage;

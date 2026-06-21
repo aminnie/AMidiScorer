@@ -11,7 +11,25 @@ class TrackMixMidiSeed
 public:
     static constexpr int kDefaultVolume = 100;
     static constexpr int kDefaultReverb = 10;
+    static constexpr int kDefaultChannel = 1;
     static constexpr int kVolumeController = 7;
+
+    static std::optional<int> findFirstChannel(const juce::MidiMessageSequence& sequence)
+    {
+        for (int i = 0; i < sequence.getNumEvents(); ++i)
+        {
+            const auto* holder = sequence.getEventPointer(i);
+            if (holder == nullptr)
+                continue;
+
+            const auto& msg = holder->message;
+            if (msg.isMetaEvent())
+                continue;
+
+            return juce::jlimit(1, 16, msg.getChannel());
+        }
+        return std::nullopt;
+    }
 
     static std::optional<int> findLastControllerValue(const juce::MidiMessageSequence& sequence, int controllerNumber)
     {
@@ -44,6 +62,12 @@ public:
         return cc.has_value() ? juce::jlimit(0, 127, *cc) : kDefaultReverb;
     }
 
+    static int channelFromTrackSequence(const juce::MidiMessageSequence& sequence)
+    {
+        const auto channel = findFirstChannel(sequence);
+        return channel.has_value() ? *channel : kDefaultChannel;
+    }
+
     static void applyFromTrackSequences(const std::vector<juce::MidiMessageSequence>& sequences, TrackMixState& mixState)
     {
         mixState.resizeForTrackCount(static_cast<int>(sequences.size()));
@@ -51,6 +75,7 @@ public:
         {
             mixState.setVolume(i, volumeFromTrackSequence(sequences[(size_t) i]));
             mixState.setReverb(i, reverbFromTrackSequence(sequences[(size_t) i]));
+            mixState.setChannel(i, channelFromTrackSequence(sequences[(size_t) i]));
         }
     }
 };

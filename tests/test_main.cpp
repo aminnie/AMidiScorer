@@ -342,6 +342,12 @@ void testTrackMixProcessor()
     expectTrue(scaledCc91.isController() && scaledCc91.getControllerNumber() == TrackMixProcessor::kReverbController,
                "Track mix preserves CC91 type");
     expectTrue(scaledCc91.getControllerValue() < cc91.getControllerValue(), "Track mix scales CC91 value");
+
+    state.setChannel(1, 3);
+    auto noteOnCh1 = juce::MidiMessage::noteOn(1, 60, (juce::uint8) 100);
+    auto remappedNote = TrackMixProcessor::applyVolumeToMessage(noteOnCh1, 1, state);
+    expectTrue(remappedNote.isNoteOn(), "Track mix preserves note-on after channel remap");
+    expectTrue(remappedNote.getChannel() == 3, "Track mix remaps output channel");
 }
 
 void testTrackMixMidiSeed()
@@ -353,18 +359,23 @@ void testTrackMixMidiSeed()
     TrackMixMidiSeed::applyFromTrackSequences({ sequence }, state);
     expectTrue(state.getVolume(0) == TrackMixMidiSeed::kDefaultVolume, "Missing CC7 defaults volume to 100");
     expectTrue(state.getReverb(0) == TrackMixMidiSeed::kDefaultReverb, "Missing CC91 defaults reverb to 10");
+    expectTrue(state.getChannel(0) == TrackMixMidiSeed::kDefaultChannel, "Missing channel defaults to 1");
 
     sequence.addEvent(juce::MidiMessage::controllerEvent(1, 7, 80), 1.0);
     sequence.addEvent(juce::MidiMessage::controllerEvent(1, TrackMixProcessor::kReverbController, 40), 2.0);
     sequence.addEvent(juce::MidiMessage::controllerEvent(1, 7, 95), 3.0);
+    sequence.addEvent(juce::MidiMessage::noteOn(5, 60, (juce::uint8) 100), 4.0);
     TrackMixMidiSeed::applyFromTrackSequences({ sequence }, state);
     expectTrue(state.getVolume(0) == 95, "Track mix seed uses last CC7 value");
     expectTrue(state.getReverb(0) == 40, "Track mix seed uses last CC91 value");
+    expectTrue(state.getChannel(0) == 1, "Track mix seed uses first MIDI channel in track");
 
     state.setVolume(0, 64);
     state.setReverb(0, 22);
+    state.setChannel(0, 8);
     expectTrue(state.getVolume(0) == 64, "Saved preset volume remains after manual set");
     expectTrue(state.getReverb(0) == 22, "Saved preset reverb remains after manual set");
+    expectTrue(state.getChannel(0) == 8, "Saved preset channel remains after manual set");
 }
 }
 

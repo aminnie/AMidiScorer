@@ -25,9 +25,9 @@ Use these modules as the source of truth for each concern:
 - `src/notation/ScoreRenderer.h` - rendering only (visual layer)
 - `src/harmony/ChordDetector.h` - chord detection + naming policy
 - `src/playback/PlaybackController.h` - playback time/bar state
-- `src/playback/TrackMixState.h` - per-track mix state
-- `src/playback/TrackMixProcessor.h` - playback mix gating/scaling
-- `src/playback/TrackMixMidiSeed.h` - CC7/CC91 seeding on load
+- `src/playback/TrackMixState.h` - per-track mix state (channel, volume, reverb, mute, solo)
+- `src/playback/TrackMixProcessor.h` - playback mix gating, channel remap, scaling
+- `src/playback/TrackMixMidiSeed.h` - Chan/CC7/CC91 seeding on load
 - `src/app/MainComponent.h` - orchestration/UI wiring (Score tab)
 - `src/app/TracksTabComponent.h` - Effects tab mix UI
 - `src/app/AppTabsHost.h` - tab host (`Start`, `Score`, `Effects`)
@@ -49,22 +49,13 @@ Use these modules as the source of truth for each concern:
 
 ## Common workflows
 
-### Build
+Configure, build, test, and launch: see **[build.md](build.md)** (Windows documented; macOS planned).
 
-```powershell
-cmake -S . -B build -DJUCE_ROOT="C:/JUCE"
-cmake --build build --config Debug --target MidiScorer MidiScorerTests
-```
+Typical agent loop after code changes:
 
-### Test
-
-```powershell
-ctest --test-dir build -C Debug --output-on-failure
-```
-
-### Launch app
-
-- `build/MidiScorer_artefacts/Debug/MidiScorer.exe`
+1. `cmake --build build --config Debug --target MidiScorer MidiScorerTests`
+2. `ctest --test-dir build -C Debug --output-on-failure`
+3. Launch `build/MidiScorer_artefacts/Debug/MidiScorer.exe` for smoke checks
 
 ## Before finishing a coding task
 
@@ -81,11 +72,12 @@ ctest --test-dir build -C Debug --output-on-failure
 - Rest insertion gap fill behavior
 - Chord track checkbox mapping to source track indices
 - Renderer first-visible-bar clef/key-signature spacing
-- Track mix MIDI seeding vs saved `trackMixBySong` preset precedence
+- Track mix MIDI seeding vs saved `trackMixBySong` preset precedence (Chan, volume, reverb)
 - Save Preset dirty-state styling and score song-settings snapshot comparison
 
 ## Existing technical references
 
+- `build.md` - configure, build, test, and launch (Windows; macOS planned)
 - `README.md` - user-facing capabilities and developer notes
 - `TECHNICAL_DESIGN.md` - deep technical design for scoring and chord detection
 - `CONTRIBUTING.md` - contributor expectations and smoke-test checklist

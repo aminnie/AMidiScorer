@@ -6,6 +6,7 @@ struct TrackMixSettings
 {
     int volume = 100;
     int reverb = 10;
+    int channel = 1;
     bool muted = false;
     bool solo = false;
 };
@@ -54,6 +55,13 @@ public:
         return tracks[(size_t) trackIndex].reverb;
     }
 
+    int getChannel(int trackIndex) const
+    {
+        if (!isValidTrack(trackIndex))
+            return 1;
+        return tracks[(size_t) trackIndex].channel;
+    }
+
     bool isMuted(int trackIndex) const
     {
         if (!isValidTrack(trackIndex))
@@ -88,6 +96,13 @@ public:
         if (reverb > 127)
             reverb = 127;
         tracks[(size_t) trackIndex].reverb = reverb;
+    }
+
+    void setChannel(int trackIndex, int channel)
+    {
+        if (!isValidTrack(trackIndex))
+            return;
+        tracks[(size_t) trackIndex].channel = juce::jlimit(1, 16, channel);
     }
 
     void setMuted(int trackIndex, bool muted)

@@ -4,12 +4,9 @@ Thanks for contributing. This project is a JUCE/C++ app focused on MIDI parsing,
 
 ## Quick start
 
-1. Configure:
-   - `cmake -S . -B build -DJUCE_ROOT="C:/JUCE"`
-2. Build:
-   - `cmake --build build --config Debug --target MidiScorer MidiScorerTests`
-3. Test:
-   - `ctest --test-dir build -C Debug --output-on-failure`
+Configure, build, and test: see **[build.md](build.md)**.
+
+After a successful build, run `ctest --test-dir build -C Debug --output-on-failure` and complete the smoke-test checklist below before submitting.
 
 ## Expected change scope
 
@@ -70,7 +67,7 @@ At minimum before submitting:
    - verify live chord marker changes only when chord changes
    - verify Stop pre-fills Continue bar and Continue resumes correctly
    - verify Save/Load Preset on Score row 1 and Save Preset red dirty indicator
-   - verify Effects tab Mute/Solo/Volume/Reverb controls and CC-seeded defaults (100/10)
+   - verify Effects tab Chan/Mute/Solo/Volume/Reverb controls; Chan seeds from track channel (default 1); volume/reverb CC-seeded defaults (100/10)
 
 ## PR checklist
 

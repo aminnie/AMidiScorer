@@ -40,11 +40,13 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
   - single selected MIDI output device (GM-oriented output path)
   - persisted selected output device identifier under `Documents/MidiScorer/midi_output.json`
 - Per-track playback mix:
-  - per eligible MIDI track controls for **Mute**, **Solo**, **Volume**, and **Reverb** (0..127)
-  - on load, volume/reverb seed from the track's last **CC7** / **CC91** when present; otherwise defaults are **100** / **10**
+  - per eligible MIDI track controls for **Chan** (1..16), **Mute**, **Solo**, **Volume**, and **Reverb** (0..127)
+  - on load, **Chan** seeds from the track's first non-meta MIDI channel (default **1**); volume/reverb seed from the track's last **CC7** / **CC91** when present; otherwise defaults are **100** / **10**
   - saved per-song mix in `ui_preset.json` (`trackMixBySong`) overrides MIDI-seeded values after edit/save
   - grouped controls by track name in the `Effects` tab (AMidiOrgan-style slider colors)
+  - **Chan** remaps outgoing playback events (notes, program change, CC, etc.) to the chosen output channel
   - volume scales note-on velocity and CC7/CC11 during playback; reverb merges CC91 during playback
+  - use **Chan** changes if you need to reorganize channels in order to play along with the score and MIDI file while playing an instrument that shares the selected MIDI module
 - Per-song score overrides (stored in `Documents/MidiScorer/ui_preset.json`):
   - transpose per song under `transposeOverridesBySong`
   - key override per song under `keyOverridesBySong`
@@ -68,7 +70,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - `src/app/AppTabsHost.h` - top-level tab container (`Start` + `Score` + `Effects`)
 - `src/app/MainComponent.h` - score page UI controls, notation orchestration, playback sync
 - `src/app/PlayerTabComponent.h` - player page MIDI output selection
-- `src/app/TracksTabComponent.h` - Effects tab (per-track Mute/Solo/Volume/Reverb)
+- `src/app/TracksTabComponent.h` - Effects tab (per-track Chan/Mute/Solo/Volume/Reverb)
 - `src/midi/TempoMap.h` - tempo/time-signature/bar conversion
 - `src/midi/TrackNoteExtractor.h` - note-on/note-off pairing
 - `src/midi/MidiProjectLoader.h` - MIDI ingestion and metadata extraction
@@ -81,38 +83,25 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - `src/playback/IPlaybackPositionSource.h` - transport position abstraction boundary
 - `src/playback/MidiFilePlaybackEngineAdapter.h` - scheduled MIDI-event playback adapter
 - `src/playback/MidiOutputDevice.h` - single-output MIDI device abstraction
-- `src/playback/TrackMixState.h` - per-track volume/reverb/mute/solo state
-- `src/playback/TrackMixProcessor.h` - playback gating and per-track message scaling/merge
-- `src/playback/TrackMixMidiSeed.h` - seed mix sliders from track CC7/CC91 on load
+- `src/playback/TrackMixState.h` - per-track channel/volume/reverb/mute/solo state
+- `src/playback/TrackMixProcessor.h` - playback gating, channel remap, and per-track message scaling/merge
+- `src/playback/TrackMixMidiSeed.h` - seed Chan and mix sliders from track sequences on load
 - `tests/test_main.cpp` - core tests
 - `tests/fixtures/` - fixture specs/documentation
 
-## Requirements
+## Build and test
 
-- CMake 3.22+
-- C++17 compiler
-- JUCE source checkout available in one of:
-  - `-DJUCE_ROOT=<path-to-JUCE>`
-  - `.deps/JUCE` under this project
-  - `C:/JUCE` (Windows auto-detected)
+See **[build.md](build.md)** for configure, build, test, and launch instructions (Windows documented; macOS planned).
 
-## Build (Windows example)
+Quick start (Windows):
 
 ```powershell
 cmake -S . -B build -DJUCE_ROOT="C:/JUCE"
-cmake --build build --config Debug --target MidiScorer
-```
-
-Output executable:
-
-- `build/MidiScorer_artefacts/Debug/MidiScorer.exe`
-
-## Run tests
-
-```powershell
-cmake --build build --config Debug --target MidiScorerTests
+cmake --build build --config Debug --target MidiScorer MidiScorerTests
 ctest --test-dir build -C Debug --output-on-failure
 ```
+
+Requirements: CMake 3.22+, C++17, and a JUCE source checkout (details in `build.md`).
 
 ## How to use
 
@@ -130,7 +119,8 @@ ctest --test-dir build -C Debug --output-on-failure
 7. Use **Score** tab to view/edit notation options and track assignments.
 8. Use **Start** tab to select a MIDI output device.
 9. Use **Score** tab **Start/Stop**, **Continue**, and **Bar** for playback transport.
-10. Use **Effects** tab to adjust per-track Mute, Solo, Volume, and Reverb.
+10. Use **Effects** tab to adjust per-track **Chan**, Mute, Solo, Volume, and Reverb.
+    - Use **Chan** changes if you need to reorganize channels in order to play along with the score and MIDI file while playing an instrument that shares the selected MIDI module.
 
 ## Notes and known limitations
 
@@ -141,9 +131,10 @@ ctest --test-dir build -C Debug --output-on-failure
 - Playback drives visual sync and optional MIDI output from one shared timeline.
 - Output is intentionally limited to a single GM-oriented MIDI destination.
 - Track mix controls apply per source MIDI track:
+  - **Chan** remaps outgoing playback to the selected MIDI channel (1..16)
   - volume scales note-on velocity and CC7/CC11
   - reverb merges CC91 when present in the file
-  - slider UI values seed from last CC7/CC91 per track (defaults 100/10) unless overridden by saved preset
+  - **Chan** seeds from the track's first channel on load (default 1); volume/reverb seed from last CC7/CC91 per track (defaults 100/10) unless overridden by saved preset
 
 ## Developer notes
 
@@ -163,7 +154,7 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ## First contribution checklist
 
-1. Configure/build locally.
+1. Configure and build locally (`build.md`).
 2. Run `ctest` and ensure zero failures.
 3. Smoke test:
    - load MIDI

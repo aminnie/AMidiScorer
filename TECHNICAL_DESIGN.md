@@ -26,7 +26,7 @@ Core modules:
 - `src/app/AppTabsHost.h` - top-level tab host (`Start`, `Score`, `Effects`)
 - `src/app/MainComponent.h` - score-page orchestration, UI state, playback sync
 - `src/app/PlayerTabComponent.h` - player-page MIDI output UI
-- `src/app/TracksTabComponent.h` - per-track mix UI (mute/solo/volume/reverb)
+- `src/app/TracksTabComponent.h` - per-track mix UI (Chan/mute/solo/volume/reverb)
 - `src/playback/IPlaybackPositionSource.h` - transport position abstraction
 - `src/playback/MidiFilePlaybackEngineAdapter.h` - scheduled MIDI event engine adapter
 - `src/playback/MidiOutputDevice.h` - single MIDI output device abstraction
@@ -65,18 +65,21 @@ This keeps the scorer and player separable for future reuse in a tabbed host suc
 Track mix is source-track based (not MIDI-channel strip based):
 
 - `MidiFilePlaybackEngineAdapter::ScheduledEvent` carries `sourceTrackIndex`.
-- `TrackMixState` holds per-track `volume`, `reverb`, `muted`, and `solo`.
+- `TrackMixState` holds per-track `channel`, `volume`, `reverb`, `muted`, and `solo`.
 - `TrackMixMidiSeed` initializes mix on load:
-  - scans each project track sequence for the last CC7 (volume) and CC91 (reverb),
+  - scans each project track sequence for the first non-meta MIDI channel (default **1**),
+  - scans for the last CC7 (volume) and CC91 (reverb),
   - uses defaults **100** / **10** when a controller is absent on that track,
   - runs before preset overlay so saved values can override seeded values.
 - `TrackMixProcessor` applies:
   - solo precedence (if any solo active, only solo tracks pass),
   - mute blocking when no solo is active,
+  - output channel remap to the per-track **Chan** value,
   - volume scaling for note-on velocity and CC7/CC11 controller values,
   - reverb merge for CC91: `(fileValue * trackReverb) / 127`.
-- `TracksTabComponent` exposes grouped controls by track name (Mute, Solo, Volume, Reverb).
-- `MainComponent` persists per-song mix entries in `ui_preset.json` under `trackMixBySong` keyed by normalized song path; mix slider edits auto-save via `onTrackMixStateChanged()`.
+- `TracksTabComponent` exposes grouped controls by track name (Chan, Mute, Solo, Volume, Reverb).
+- Use **Chan** changes if you need to reorganize channels in order to play along with the score and MIDI file while playing an instrument that shares the selected MIDI module.
+- `MainComponent` persists per-song mix entries in `ui_preset.json` under `trackMixBySong` keyed by normalized song path; mix control edits auto-save via `onTrackMixStateChanged()`.
 
 ## 3) Note scoring design
 

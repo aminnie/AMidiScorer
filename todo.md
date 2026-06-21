@@ -115,3 +115,10 @@ This checklist tracks code-review findings and implementation work items.
     - Status line shows Sig before Bar; KeySrc indicates detected vs override key source.
     - Save Preset highlights red when score song settings are dirty.
     - Playback status messages: running/stopped/continuing without tempo-override suffix noise.
+- [x] Add per-track **Chan** control (1..16) with playback channel remap.
+  - Files: `src/playback/TrackMixState.h`, `src/playback/TrackMixMidiSeed.h`, `src/playback/TrackMixProcessor.h`, `src/app/TracksTabComponent.h`, `src/app/MainComponent.h`, `tests/test_main.cpp`
+  - Acceptance:
+    - Effects tab shows **Chan** before Mute on each track row.
+    - Chan seeds from the track's first MIDI channel on load (default 1); saved `trackMixBySong` overrides.
+    - Chan edits auto-save to the profile and remap outgoing playback events.
+    - Use Chan changes if you need to reorganize channels in order to play along with the score and MIDI file while playing an instrument that shares the selected MIDI module.
