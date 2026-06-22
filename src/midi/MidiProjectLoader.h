@@ -48,10 +48,19 @@ struct MidiProjectData
 class MidiProjectLoader
 {
 public:
-    bool load(const juce::File& midiFile, MidiProjectData& outData, juce::String& error)
+    static juce::String getType0NotSupportedMessage()
+    {
+        return "This MIDI file is Standard MIDI File type 0 (all parts are stored on a single track).\n\n"
+               "MidiScorer requires type 1 files with separate tracks for each part.\n\n"
+               "Please open this file in a MIDI editor and save or export it as type 1, then try loading it again.";
+    }
+
+    bool load(const juce::File& midiFile, MidiProjectData& outData, juce::String& error, bool* rejectedType0 = nullptr)
     {
         error.clear();
         outData = {};
+        if (rejectedType0 != nullptr)
+            *rejectedType0 = false;
 
         juce::FileInputStream stream(midiFile);
         if (!stream.openedOk())
@@ -61,9 +70,18 @@ public:
         }
 
         juce::MidiFile parsed;
-        if (!parsed.readFrom(stream))
+        int midiFileType = -1;
+        if (!parsed.readFrom(stream, true, &midiFileType))
         {
             error = "Failed to read MIDI file: " + midiFile.getFileName();
+            return false;
+        }
+
+        if (midiFileType == 0)
+        {
+            error = getType0NotSupportedMessage();
+            if (rejectedType0 != nullptr)
+                *rejectedType0 = true;
             return false;
         }
 

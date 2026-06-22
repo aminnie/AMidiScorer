@@ -1710,9 +1710,18 @@ private:
 
             juce::String error;
             MidiProjectData loaded;
-            if (!loader.load(file, loaded, error))
+            bool rejectedType0 = false;
+            if (!loader.load(file, loaded, error, &rejectedType0))
             {
-                setStatusMessage("Load failed: " + error);
+                if (rejectedType0)
+                {
+                    showWarningModal(this, "MIDI Type 0 Not Supported", error);
+                    setStatusMessage("Load cancelled: MIDI file type 0 is not supported.");
+                }
+                else
+                {
+                    setStatusMessage("Load failed: " + error);
+                }
                 updateWindowTitle();
                 return;
             }
@@ -1879,6 +1888,16 @@ private:
     {
         juce::AlertWindow::showMessageBoxAsync(
             juce::MessageBoxIconType::InfoIcon,
+            title,
+            message,
+            "OK",
+            parent);
+    }
+
+    static void showWarningModal(juce::Component* parent, const juce::String& title, const juce::String& message)
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
             title,
             message,
             "OK",

@@ -86,6 +86,38 @@ void testChordDetector()
         expectTrue(flatChords.front().symbol.contains("C"), "Chord naming options keep root identity");
 }
 
+void testMidiLoaderRejectsType0()
+{
+    juce::TemporaryFile tempFile("type0.mid");
+    const auto file = tempFile.getFile();
+    static const uint8_t type0MidiData[] =
+    {
+        0x4d, 0x54, 0x68, 0x64,  // MThd
+        0x00, 0x00, 0x00, 0x06,  // header size
+        0x00, 0x00,              // format 0
+        0x00, 0x01,              // one track
+        0x01, 0xE0,              // 480 PPQ
+        0x4d, 0x54, 0x72, 0x6b,  // MTrk
+        0x00, 0x00, 0x00, 0x0D,
+        0x00, 0x90, 0x3C, 0x64,
+        0x83, 0x60, 0x80, 0x3C, 0x00,
+        0x00, 0xFF, 0x2F, 0x00   // end-of-track
+    };
+
+    expectTrue(file.replaceWithData(type0MidiData, sizeof(type0MidiData)),
+               "Can write temporary type 0 MIDI fixture");
+
+    MidiProjectLoader loader;
+    MidiProjectData project;
+    juce::String error;
+    bool rejectedType0 = false;
+    const bool ok = loader.load(file, project, error, &rejectedType0);
+    expectTrue(!ok, "Loader rejects MIDI file type 0");
+    expectTrue(rejectedType0, "Loader flags type 0 rejection");
+    expectTrue(error.containsIgnoreCase("type 0"), "Loader reports type 0 in error message");
+    expectTrue(error.containsIgnoreCase("type 1"), "Loader asks user to convert to type 1");
+}
+
 void testMidiLoaderRejectsSmpte()
 {
     // Fixture intent: tempo-time-signature-changes (timing-format validation path)
@@ -95,7 +127,7 @@ void testMidiLoaderRejectsSmpte()
     {
         0x4d, 0x54, 0x68, 0x64,  // MThd
         0x00, 0x00, 0x00, 0x06,  // header size
-        0x00, 0x00,              // format 0
+        0x00, 0x01,              // format 1
         0x00, 0x01,              // one track
         0xe7, 0x28,              // SMPTE division: -25 fps, 40 ticks/frame
         0x4d, 0x54, 0x72, 0x6b,  // MTrk
@@ -384,6 +416,7 @@ int main()
     testTempoMap();
     testQuantizer();
     testChordDetector();
+    testMidiLoaderRejectsType0();
     testMidiLoaderRejectsSmpte();
     testTrackNoteExtractorFlushesOrphans();
     testScoreModelSplitsCrossBarNotes();
