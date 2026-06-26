@@ -86,7 +86,10 @@ target_sources(MidiScorer
         src/app/AppTabsHost.h
         src/app/MainComponent.h
         src/app/PlayerTabComponent.h
+        src/app/PresetFileStore.h
+        src/app/ScoreRebuildService.h
         src/app/TracksTabComponent.h
+        src/app/TransportCoordinator.h
         src/midi/MidiProjectLoader.h
         src/midi/TempoMap.h
         src/midi/TrackNoteExtractor.h

@@ -18,6 +18,9 @@
 #include "../playback/TrackMixProcessor.h"
 #include "../playback/TrackMixState.h"
 #include "../playback/TrackMixMidiSeed.h"
+#include "PresetFileStore.h"
+#include "ScoreRebuildService.h"
+#include "TransportCoordinator.h"
 
 class MainComponent final : public juce::Component,
                             public juce::FileDragAndDropTarget,
@@ -800,15 +803,6 @@ private:
         return clamped;
     }
 
-    static ScoreRenderer::ClefType getClefTypeFromCombo(const juce::ComboBox& combo)
-    {
-        if (combo.getSelectedId() == 2)
-            return ScoreRenderer::ClefType::bass;
-        if (combo.getSelectedId() == 3)
-            return ScoreRenderer::ClefType::drum;
-        return ScoreRenderer::ClefType::treble;
-    }
-
     static void layoutStaffControls(juce::Rectangle<int> area,
                                     juce::Label& label,
                                     juce::ComboBox& trackSelector,
@@ -1026,47 +1020,15 @@ private:
             chordTrackButtons[0]->setToggleState(true, juce::dontSendNotification);
     }
 
-    juce::File getPresetFilePath() const
-    {
-        auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("MidiScorer");
-        if (!dir.exists())
-            dir.createDirectory();
-        return dir.getChildFile("ui_preset.json");
-    }
-
-    juce::File getMidiOutputConfigPath() const
-    {
-        auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("MidiScorer");
-        if (!dir.exists())
-            dir.createDirectory();
-        return dir.getChildFile("midi_output.json");
-    }
-
-    static bool writeTextFileAtomically(const juce::File& targetFile, const juce::String& text, juce::String& error)
-    {
-        juce::TemporaryFile tempFile(targetFile);
-        if (!tempFile.getFile().replaceWithText(text))
-        {
-            error = "unable to write temporary file";
-            return false;
-        }
-        if (!tempFile.overwriteTargetFileWithTemporary())
-        {
-            error = "unable to replace target file";
-            return false;
-        }
-        return true;
-    }
-
     void saveSelectedMidiOutputToConfig()
     {
         auto payloadObj = std::make_unique<juce::DynamicObject>();
         payloadObj->setProperty("selectedOutputIdentifier", midiOutputDevice.getSelectedIdentifier());
         payloadObj->setProperty("selectedOutputName", midiOutputDevice.getSelectedName());
         juce::String writeError;
-        if (!writeTextFileAtomically(getMidiOutputConfigPath(),
-                                     juce::JSON::toString(juce::var(payloadObj.release())),
-                                     writeError))
+        if (!PresetFileStore::writeTextFileAtomically(PresetFileStore::getMidiOutputConfigPath(),
+                                                      juce::JSON::toString(juce::var(payloadObj.release())),
+                                                      writeError))
         {
             setStatusMessage("Failed to save MIDI output selection.");
             juce::Logger::writeToLog("MidiScorer: could not save MIDI output config: " + writeError);
@@ -1075,7 +1037,7 @@ private:
 
     void loadSelectedMidiOutputFromConfig()
     {
-        const auto configFile = getMidiOutputConfigPath();
+        const auto configFile = PresetFileStore::getMidiOutputConfigPath();
         if (!configFile.existsAsFile())
             return;
 
@@ -1106,7 +1068,7 @@ private:
 
     void loadLastMidiDirectoryFromPreset()
     {
-        const auto file = getPresetFilePath();
+        const auto file = PresetFileStore::getPresetFilePath();
         if (!file.existsAsFile())
             return;
 
@@ -1129,26 +1091,14 @@ private:
         if (!lastMidiDirectory.isDirectory())
             return;
 
-        const auto file = getPresetFilePath();
-        juce::var parsed;
-        auto obj = std::make_unique<juce::DynamicObject>();
-
-        if (file.existsAsFile())
-        {
-            const auto parseResult = juce::JSON::parse(file.loadFileAsString(), parsed);
-            if (!parseResult.failed() && parsed.isObject())
-            {
-                if (auto* existing = parsed.getDynamicObject())
-                {
-                    for (const auto& property : existing->getProperties())
-                        obj->setProperty(property.name, property.value);
-                }
-            }
-        }
-
-        obj->setProperty("lastMidiDirectory", lastMidiDirectory.getFullPathName());
+        const auto directoryPath = lastMidiDirectory.getFullPathName();
         juce::String writeError;
-        if (!writeTextFileAtomically(file, juce::JSON::toString(juce::var(obj.release())), writeError))
+        if (!PresetFileStore::mergeWritePreset(
+                [&](juce::DynamicObject& obj)
+                {
+                    obj.setProperty("lastMidiDirectory", directoryPath);
+                },
+                writeError))
             juce::Logger::writeToLog("MidiScorer: could not save last MIDI directory: " + writeError);
     }
 
@@ -1224,7 +1174,7 @@ private:
     void loadRecentFilesFromPreset()
     {
         recentMidiFiles.clear();
-        const auto file = getPresetFilePath();
+        const auto file = PresetFileStore::getPresetFilePath();
         if (!file.existsAsFile())
             return;
 
@@ -1251,29 +1201,17 @@ private:
 
     void saveRecentFilesToPreset()
     {
-        const auto file = getPresetFilePath();
-        juce::var parsed;
-        auto obj = std::make_unique<juce::DynamicObject>();
-
-        if (file.existsAsFile())
-        {
-            const auto parseResult = juce::JSON::parse(file.loadFileAsString(), parsed);
-            if (!parseResult.failed() && parsed.isObject())
-            {
-                if (auto* existing = parsed.getDynamicObject())
-                {
-                    for (const auto& property : existing->getProperties())
-                        obj->setProperty(property.name, property.value);
-                }
-            }
-        }
-
         juce::Array<juce::var> recent;
         for (const auto& path : recentMidiFiles)
             recent.add(path);
-        obj->setProperty("recentMidiFiles", juce::var(recent));
+
         juce::String writeError;
-        if (!writeTextFileAtomically(file, juce::JSON::toString(juce::var(obj.release())), writeError))
+        if (!PresetFileStore::mergeWritePreset(
+                [&](juce::DynamicObject& obj)
+                {
+                    obj.setProperty("recentMidiFiles", juce::var(recent));
+                },
+                writeError))
             juce::Logger::writeToLog("MidiScorer: could not save recent MIDI files: " + writeError);
     }
 
@@ -1358,9 +1296,7 @@ private:
 
     juce::String getSongPresetKey() const
     {
-        if (!project.file.existsAsFile())
-            return {};
-        return project.file.getFullPathName().replaceCharacter('\\', '/').toLowerCase();
+        return PresetFileStore::songKeyFromProjectFile(project.file);
     }
 
     juce::String getSongPresetTempoKey() const
@@ -1602,7 +1538,7 @@ private:
         auto tempoOverridesBySong = std::make_unique<juce::DynamicObject>();
         auto trackMixBySong = std::make_unique<juce::DynamicObject>();
         auto loopBySong = std::make_unique<juce::DynamicObject>();
-        const auto file = getPresetFilePath();
+        const auto file = PresetFileStore::getPresetFilePath();
         if (file.existsAsFile())
         {
             const auto existingJsonText = file.loadFileAsString();
@@ -1727,7 +1663,7 @@ private:
 
         const juce::var payload(obj.release());
         juce::String writeError;
-        const bool saveOk = writeTextFileAtomically(file, juce::JSON::toString(payload), writeError);
+        const bool saveOk = PresetFileStore::writeTextFileAtomically(file, juce::JSON::toString(payload), writeError);
         if (saveOk)
             markCurrentScoreSongSettingsAsSaved();
         refreshSavePresetButtonDirtyStyle();
@@ -1747,7 +1683,7 @@ private:
 
     bool loadUiPreset(bool silent = false)
     {
-        const auto file = getPresetFilePath();
+        const auto file = PresetFileStore::getPresetFilePath();
         if (!file.existsAsFile())
         {
             if (!silent)
@@ -1990,18 +1926,7 @@ private:
         if (loopEnabled && !project.tracks.empty())
         {
             const int currentBar = playbackPositionSource->getCurrentBar();
-            if (loopEndBar >= loopStartBar && currentBar > loopEndBar)
-            {
-                playbackController.seekToSecond(project.tempoMap.barToSecondsDownbeat(loopStartBar));
-                midiPlaybackEngine.seekToPlaybackTime(project.tempoMap.barToSecondsDownbeat(loopStartBar));
-                midiOutputDevice.sendAllNotesOff();
-                resetLiveChordState();
-                scoreRenderer.setCurrentBar(loopStartBar);
-                scoreRenderer2.setCurrentBar(loopStartBar);
-                scoreRenderer3.setCurrentBar(loopStartBar);
-                transportLabel.setText("Bar " + juce::String(loopStartBar), juce::dontSendNotification);
-                displayedBar = loopStartBar;
-            }
+            TransportCoordinator::handleLoopWrap(buildTransportContext(), currentBar);
         }
 
         if (playbackPositionSource->hasReachedEnd())
@@ -2140,81 +2065,76 @@ private:
         renderer.repaint();
     }
 
-    void rebuildStaff(int staffIndex,
-                      juce::ComboBox& selector,
-                      juce::ComboBox& clefSelector,
-                      ScoreModel& model,
-                      ScoreRenderer& renderer)
+    TransportCoordinator::Context buildTransportContext()
     {
-        const int index = selector.getSelectedItemIndex();
-        if (index < 0 || index >= static_cast<int>(project.tracks.size()))
+        TransportCoordinator::Context ctx;
+        ctx.project = &project;
+        ctx.playbackController = &playbackController;
+        ctx.midiPlaybackEngine = &midiPlaybackEngine;
+        ctx.midiOutputDevice = &midiOutputDevice;
+        ctx.renderers[0] = &scoreRenderer;
+        ctx.renderers[1] = &scoreRenderer2;
+        ctx.renderers[2] = &scoreRenderer3;
+        ctx.transportToggleButton = &transportToggleButton;
+        ctx.continueButton = &continueButton;
+        ctx.continueBarInput = &continueBarInput;
+        ctx.loopEnabledToggle = &loopEnabledToggle;
+        ctx.loopStartInput = &loopStartInput;
+        ctx.loopEndInput = &loopEndInput;
+        ctx.transportLabel = &transportLabel;
+        ctx.continueArmed = &continueArmed;
+        ctx.loopEnabled = &loopEnabled;
+        ctx.loopStartBar = &loopStartBar;
+        ctx.loopEndBar = &loopEndBar;
+        ctx.displayedBar = &displayedBar;
+        ctx.setStatusMessage = [this](const juce::String& message) { setStatusMessage(message); };
+        ctx.resetLiveChordState = [this]() { resetLiveChordState(); };
+        ctx.updateTransportControls = [this]() { updateTransportControls(); };
+        return ctx;
+    }
+
+    ScoreRebuildService::Context buildScoreRebuildContext()
+    {
+        ScoreRebuildService::Context ctx;
+        ctx.project = &project;
+        ctx.playbackController = &playbackController;
+        ctx.liveChordNotesByStaff = &liveChordNotesByStaff;
+        ctx.clearStaff = [this](int, ScoreModel& model, ScoreRenderer& renderer) { clearStaff(model, renderer); };
+        ctx.effectiveTransposeForTrack = [this](int)
         {
-            clearStaff(model, renderer);
-            liveChordNotesByStaff[(size_t) staffIndex].clear();
-            return;
-        }
+            return getEffectiveTransposeSemitones(true);
+        };
+        ctx.collectChordAnalysisNotes = [this](int trackIndex) { return collectChordAnalysisNotes(trackIndex); };
+        ctx.namingOptions = [this]() { return getChordNamingOptions(); };
+        ctx.resetLiveChordState = [this]() { resetLiveChordState(); };
+        ctx.setStatusMessage = [this](const juce::String& message) { setStatusMessage(message); };
+        ctx.transportLabel = &transportLabel;
+        ctx.keyLabel = &keyLabel;
+        ctx.midiMetaLabel = &midiMetaLabel;
+        ctx.chordTrackButtons = &chordTrackButtons;
+        ctx.displayedBar = &displayedBar;
+        ctx.hasKeyOverride = keyOverride.has_value();
+        ctx.keySharpsOrFlats = keyOverride.has_value() ? keyOverride->sharpsOrFlats : 0;
+        ctx.keyDisplayText = keyOverride.has_value() ? keyOverride->displayText : project.getKeyDisplayText();
+        ctx.midiMetaText = buildMidiMetaText();
+        ctx.refreshSavePresetButtonDirtyStyle = [this]() { refreshSavePresetButtonDirtyStyle(); };
+        ctx.hasLoadedProject = [this]() { return hasLoadedProject(); };
+        return ctx;
+    }
 
-        const auto& track = project.tracks[(size_t) index];
-        auto transposedNotes = track.notes;
-        const auto clefType = getClefTypeFromCombo(clefSelector);
-        const int transposeSemitones = getEffectiveTransposeSemitones(true);
-        if (transposeSemitones != 0 && clefType != ScoreRenderer::ClefType::drum)
-        {
-            for (auto& note : transposedNotes)
-                note.noteNumber = juce::jlimit(0, 127, note.noteNumber + transposeSemitones);
-        }
-
-        auto quantized = Quantizer::quantizeTrack(transposedNotes, project.tempoMap);
-        const auto chordAnalysisNotes = collectChordAnalysisNotes(index);
-        liveChordNotesByStaff[(size_t) staffIndex] = chordAnalysisNotes;
-        const auto namingOptions = getChordNamingOptions();
-
-        auto chords = ChordDetector::detect(chordAnalysisNotes, project.tempoMap, project.maxBar, namingOptions);
-        model.build(project.tempoMap, quantized, chords, project.maxBar);
-        renderer.setStaffLabel(track.name);
-        renderer.setClefType(clefType);
-        renderer.setCurrentBar(playbackController.getCurrentBar());
+    std::array<ScoreRebuildService::StaffLane, 3> buildScoreRebuildLanes()
+    {
+        return { {
+            { &staff1TrackSelector, &staff1ClefSelector, &scoreModel1, &scoreRenderer, 0 },
+            { &staff2TrackSelector, &staff2ClefSelector, &scoreModel2, &scoreRenderer2, 1 },
+            { &staff3TrackSelector, &staff3ClefSelector, &scoreModel3, &scoreRenderer3, 2 },
+        } };
     }
 
     void rebuildAllStaffs()
     {
-        if (project.tracks.empty())
-        {
-            clearStaff(scoreModel1, scoreRenderer);
-            clearStaff(scoreModel2, scoreRenderer2);
-            clearStaff(scoreModel3, scoreRenderer3);
-            resetLiveChordState();
-            refreshSavePresetButtonDirtyStyle();
-            setStatusMessage("Load a MIDI file to begin.");
-            return;
-        }
-
-        const bool useOverride = keyOverride.has_value();
-        const bool hasKeySignature = useOverride ? true : project.hasKeySignature;
-        const int keySharpsOrFlats = useOverride ? keyOverride->sharpsOrFlats : project.keySharpsOrFlats;
-        scoreRenderer.setKeySignature(hasKeySignature, keySharpsOrFlats);
-        scoreRenderer2.setKeySignature(hasKeySignature, keySharpsOrFlats);
-        scoreRenderer3.setKeySignature(hasKeySignature, keySharpsOrFlats);
-
-        rebuildStaff(0, staff1TrackSelector, staff1ClefSelector, scoreModel1, scoreRenderer);
-        rebuildStaff(1, staff2TrackSelector, staff2ClefSelector, scoreModel2, scoreRenderer2);
-        rebuildStaff(2, staff3TrackSelector, staff3ClefSelector, scoreModel3, scoreRenderer3);
-        resetLiveChordState();
-
-        const int bar = hasLoadedProject() ? juce::jlimit(1, juce::jmax(1, project.maxBar), playbackController.getCurrentBar()) : 1;
-        scoreRenderer.setCurrentBar(bar);
-        scoreRenderer2.setCurrentBar(bar);
-        scoreRenderer3.setCurrentBar(bar);
-        transportLabel.setText("Bar " + juce::String(bar), juce::dontSendNotification);
-        displayedBar = bar;
-
-        int selectedTrackCount = 0;
-        for (auto* button : chordTrackButtons)
-            selectedTrackCount += button->getToggleState() ? 1 : 0;
-        keyLabel.setText("Key: " + (keyOverride.has_value() ? keyOverride->displayText : project.getKeyDisplayText()),
-                         juce::dontSendNotification);
-        midiMetaLabel.setText(buildMidiMetaText(), juce::dontSendNotification);
-        setStatusMessage("Staffs ready  | Chords from " + juce::String(selectedTrackCount) + " selected tracks");
+        auto ctx = buildScoreRebuildContext();
+        ScoreRebuildService::rebuildAllStaffs(ctx, buildScoreRebuildLanes());
     }
 
     void applyScoreColorScheme()
@@ -2291,105 +2211,37 @@ private:
 
     void startPlayback()
     {
-        if (project.tracks.empty())
-            return;
-
-        playbackController.playFromStart();
-        midiPlaybackEngine.seekToPlaybackTime(0.0);
-        continueArmed = false;
-        resetLiveChordState();
-        scoreRenderer.setCurrentBar(1);
-        scoreRenderer2.setCurrentBar(1);
-        scoreRenderer3.setCurrentBar(1);
-        transportLabel.setText("Bar 1", juce::dontSendNotification);
-        displayedBar = 1;
-        updateTransportControls();
-        setStatusMessage("Playback running");
+        TransportCoordinator::startPlayback(buildTransportContext());
     }
 
     void continuePlaybackFromBar()
     {
-        if (project.tracks.empty() || !continueArmed)
-            return;
-
-        const int requestedBar = continueBarInput.getText().trim().getIntValue();
-        const int clampedBar = juce::jlimit(1, juce::jmax(1, project.maxBar), juce::jmax(1, requestedBar));
-        continueBarInput.setText(juce::String(clampedBar), juce::dontSendNotification);
-
-        playbackController.playFromBar(clampedBar);
-        midiPlaybackEngine.seekToPlaybackTime(project.tempoMap.barToSecondsDownbeat(clampedBar));
-        continueArmed = false;
-        resetLiveChordState();
-        scoreRenderer.setCurrentBar(clampedBar);
-        scoreRenderer2.setCurrentBar(clampedBar);
-        scoreRenderer3.setCurrentBar(clampedBar);
-        transportLabel.setText("Bar " + juce::String(clampedBar), juce::dontSendNotification);
-        displayedBar = clampedBar;
-        updateTransportControls();
-        setStatusMessage("Playback continuing from bar " + juce::String(clampedBar));
+        TransportCoordinator::continuePlaybackFromBar(buildTransportContext());
     }
 
     void stopPlayback(bool userInitiated)
     {
-        if (userInitiated && !project.tracks.empty())
-        {
-            const int currentBar = juce::jmax(1, playbackController.getCurrentBar());
-            continueBarInput.setText(juce::String(currentBar), juce::dontSendNotification);
-        }
-
-        playbackController.stop();
-        midiPlaybackEngine.seekToPlaybackTime(0.0);
-        midiOutputDevice.sendAllNotesOff();
-        continueArmed = userInitiated && !project.tracks.empty();
-        updateTransportControls();
-        if (userInitiated)
-            setStatusMessage("Playback stopped");
+        TransportCoordinator::stopPlayback(buildTransportContext(), userInitiated);
     }
 
     void onTransportToggleClicked()
     {
-        if (playbackController.isPlaying())
-            stopPlaybackAndReset();
-        else
-            startPlayback();
+        TransportCoordinator::onTransportToggleClicked(buildTransportContext());
     }
 
     void refreshTransportToggleButtonText()
     {
-        if (playbackController.isPlaying())
-            transportToggleButton.setButtonText("Stop");
-        else
-            transportToggleButton.setButtonText("Start");
+        TransportCoordinator::refreshTransportToggleButtonText(buildTransportContext());
     }
 
     void refreshTransportToggleButtonStyle(bool hasProject, bool isPlaying)
     {
-        const auto readyOff = juce::Colours::darkgreen;
-        const auto readyOn = juce::Colours::darkgreen.brighter();
-        const auto playingOff = juce::Colours::darkgoldenrod;
-        const auto playingOn = juce::Colours::goldenrod;
-        const auto disabled = juce::Colours::darkgrey;
-
-        transportToggleButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
-        transportToggleButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
-        transportToggleButton.setColour(juce::TextButton::buttonColourId,
-                                        hasProject ? (isPlaying ? playingOff : readyOff) : disabled);
-        transportToggleButton.setColour(juce::TextButton::buttonOnColourId,
-                                        hasProject ? (isPlaying ? playingOn : readyOn) : disabled);
+        TransportCoordinator::refreshTransportToggleButtonStyle(buildTransportContext(), hasProject, isPlaying);
     }
 
     void updateTransportControls()
     {
-        const bool hasProject = !project.tracks.empty();
-        const bool isPlaying = playbackController.isPlaying();
-        transportToggleButton.setEnabled(hasProject);
-        refreshTransportToggleButtonText();
-        refreshTransportToggleButtonStyle(hasProject, isPlaying);
-        continueButton.setEnabled(hasProject && !isPlaying && continueArmed);
-        continueBarInput.setEnabled(hasProject && !isPlaying && continueArmed);
-        loopEnabledToggle.setEnabled(hasProject);
-        loopStartInput.setEnabled(hasProject);
-        loopEndInput.setEnabled(hasProject);
+        TransportCoordinator::updateTransportControls(buildTransportContext());
     }
 
     juce::String buildSignatureText() const

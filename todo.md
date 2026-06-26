@@ -176,7 +176,7 @@ This checklist tracks code-review findings and implementation work items.
 
 ## Priority 9 - Maintainability and performance
 
-- [ ] **P1 / L** Decompose `MainComponent` into smaller services (`PresetStore`, `ScoreRebuildService`, transport coordinator).
+- [x] **P1 / L** Decompose `MainComponent` into smaller services (`PresetStore`, `ScoreRebuildService`, transport coordinator).
   - Files: `src/app/MainComponent.h` and extracted helpers under `src/app/`
   - Acceptance:
     - Orchestration remains behavior-compatible while reducing single-header coupling.
