@@ -6,6 +6,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(APPLE)
+    set(MIDISCORER_MACOS_BUNDLE_ID "org.midiscorer.app" CACHE STRING "macOS bundle identifier")
+    set(MIDISCORER_MACOS_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS deployment target")
+    set(MIDISCORER_MACOS_ARCHS "" CACHE STRING "Optional CMAKE_OSX_ARCHITECTURES value (for example: arm64;x86_64)")
+
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "${MIDISCORER_MACOS_DEPLOYMENT_TARGET}" CACHE STRING "Minimum macOS deployment target" FORCE)
+    endif()
+
+    if(MIDISCORER_MACOS_ARCHS)
+        set(CMAKE_OSX_ARCHITECTURES "${MIDISCORER_MACOS_ARCHS}" CACHE STRING "Target macOS architectures" FORCE)
+    endif()
+endif()
+
 set(JUCE_ROOT "" CACHE PATH "Path to JUCE root (directory containing CMakeLists.txt)")
 
 set(_juce_source "")
@@ -52,6 +66,10 @@ if(APPLE)
         target_sources(MidiScorer PRIVATE "${MIDISCORER_MACOS_ICON}")
 
         set_target_properties(MidiScorer PROPERTIES
+            MACOSX_BUNDLE_GUI_IDENTIFIER "${MIDISCORER_MACOS_BUNDLE_ID}"
+            MACOSX_BUNDLE_BUNDLE_NAME "MidiScorer"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
             MACOSX_BUNDLE_ICON_FILE "MidiScorer.icns"
             XCODE_ATTRIBUTE_INFOPLIST_KEY_CFBundleIconFile "MidiScorer.icns"
         )

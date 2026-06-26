@@ -6,7 +6,9 @@ Thanks for contributing. This project is a JUCE/C++ app focused on MIDI parsing,
 
 Configure, build, and test: see **[build.md](build.md)**.
 
-After a successful build, run `ctest --test-dir build -C Debug --output-on-failure` and complete the smoke-test checklist below before submitting.
+After a successful build, run `ctest` for your active build directory and complete the smoke-test checklist below before submitting.
+- Windows example: `ctest --test-dir build -C Debug --output-on-failure`
+- macOS example: `ctest --test-dir build-mac --output-on-failure`
 
 ## Expected change scope
 

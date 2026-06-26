@@ -97,7 +97,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 
 ## Build and test
 
-See **[build.md](build.md)** for configure, build, test, and launch instructions (Windows documented; macOS planned).
+See **[build.md](build.md)** for configure, build, test, and launch instructions for Windows and macOS.
 
 Quick start (Windows):
 
@@ -108,6 +108,14 @@ ctest --test-dir build -C Debug --output-on-failure
 ```
 
 Requirements: CMake 3.22+, C++17, and a JUCE source checkout (details in `build.md`).
+
+Quick start (macOS):
+
+```bash
+./scripts/mac-build.sh
+ctest --test-dir build-mac --output-on-failure
+open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
+```
 
 ## How to use
 

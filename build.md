@@ -1,14 +1,13 @@
 # MidiScorer build guide
 
-This document describes how to configure, build, test, and run MidiScorer locally.
-
-**Windows** instructions are current and tested. **macOS** support is planned; a section is reserved below for future notes.
+This document describes how to configure, build, test, and run MidiScorer locally on Windows and macOS.
 
 ## Requirements
 
 - **CMake** 3.22 or newer
 - **C++17** compiler
   - Windows: Visual Studio 2022 (MSVC) with the Desktop development with C++ workload
+  - macOS: Xcode or Command Line Tools (`xcode-select --install`)
 - **JUCE** source checkout (see [JUCE location](#juce-location))
 
 ## JUCE location
@@ -121,13 +120,60 @@ After changing the icon PNG, re-run configure and rebuild so JUCE regenerates th
 
 ## macOS
 
-macOS build steps are not documented here yet. When added, this section will cover:
+All commands below assume the repository root (`midiscorer/`) as the current directory.
 
-- Xcode / command-line tools prerequisites
-- JUCE path conventions on macOS
-- Configure, build, test, and `.app` bundle launch paths
+### First-time configure (Unix Makefiles)
 
-Until then, use the same CMake targets (`MidiScorer`, `MidiScorerTests`) with a native generator (for example `-G Xcode` or Ninja) and a local JUCE checkout via `-DJUCE_ROOT`.
+```bash
+cmake -S . -B build-mac -DJUCE_ROOT="$PWD/.deps/JUCE" -DCMAKE_BUILD_TYPE=Debug
+```
+
+Use your actual JUCE path if needed. You can also set `JUCE_ROOT` in your environment.
+
+### Build app and tests
+
+```bash
+cmake --build build-mac --target MidiScorer MidiScorerTests
+```
+
+### Run tests
+
+```bash
+ctest --test-dir build-mac --output-on-failure
+```
+
+### Launch the app
+
+```bash
+open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
+```
+
+### Alternate generators
+
+- Ninja:
+  ```bash
+  cmake -S . -B build-mac -G Ninja -DJUCE_ROOT="$PWD/.deps/JUCE" -DCMAKE_BUILD_TYPE=Debug
+  cmake --build build-mac --target MidiScorer MidiScorerTests
+  ```
+- Xcode:
+  ```bash
+  cmake -S . -B build-mac-xcode -G Xcode -DJUCE_ROOT="$PWD/.deps/JUCE"
+  cmake --build build-mac-xcode --config Debug --target MidiScorer MidiScorerTests
+  ctest --test-dir build-mac-xcode -C Debug --output-on-failure
+  open "build-mac-xcode/MidiScorer_artefacts/Debug/MidiScorer.app"
+  ```
+
+### macOS helper scripts
+
+- `./scripts/mac-build.sh` supports `--release`, `--ninja`, and `--xcode`
+- `./scripts/mac-bootstrap.sh` is a first-time setup helper that verifies tools, clones JUCE if missing, then runs `mac-build.sh`
+
+### macOS output paths
+
+| Target | Debug (Makefile/Ninja) | Release (Makefile/Ninja) |
+|--------|--------------------------|---------------------------|
+| App | `build-mac/MidiScorer_artefacts/Debug/MidiScorer.app` | `build-mac-release/MidiScorer_artefacts/Release/MidiScorer.app` |
+| Tests | `build-mac/MidiScorerTests_artefacts/Debug/MidiScorerTests` | `build-mac-release/MidiScorerTests_artefacts/Release/MidiScorerTests` |
 
 ## Quick reference
 
@@ -138,6 +184,14 @@ Until then, use the same CMake targets (`MidiScorer`, `MidiScorerTests`) with a 
 | Build + test | `cmake --build build --config Debug --target MidiScorer MidiScorerTests` |
 | Run tests | `ctest --test-dir build -C Debug --output-on-failure` |
 | Launch | `Start-Process "build/MidiScorer_artefacts/Debug/MidiScorer.exe"` |
+
+| Task | macOS (Debug, Makefile/Ninja) |
+|------|--------------------------------|
+| Configure | `cmake -S . -B build-mac -DJUCE_ROOT="$PWD/.deps/JUCE" -DCMAKE_BUILD_TYPE=Debug` |
+| Build app | `cmake --build build-mac --target MidiScorer` |
+| Build + test | `cmake --build build-mac --target MidiScorer MidiScorerTests` |
+| Run tests | `ctest --test-dir build-mac --output-on-failure` |
+| Launch | `open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"` |
 
 ## Related docs
 

@@ -50,7 +50,7 @@ Use these modules as the source of truth for each concern:
 
 ## Common workflows
 
-Configure, build, test, and launch: see **[build.md](build.md)** (Windows documented; macOS planned).
+Configure, build, test, and launch: see **[build.md](build.md)** (Windows and macOS).
 
 Typical agent loop after code changes:
 
@@ -79,7 +79,7 @@ Typical agent loop after code changes:
 
 ## Existing technical references
 
-- `build.md` - configure, build, test, and launch (Windows; macOS planned)
+- `build.md` - configure, build, test, and launch for Windows and macOS
 - `README.md` - user-facing capabilities and developer notes
 - `TECHNICAL_DESIGN.md` - deep technical design for scoring and chord detection
 - `CONTRIBUTING.md` - contributor expectations and smoke-test checklist
