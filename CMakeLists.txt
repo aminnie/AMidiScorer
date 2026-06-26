@@ -33,13 +33,31 @@ else()
 endif()
 
 if(WIN32)
+    # juceaide winicon uses Drawable::createFromImageFile; square PNG with alpha works reliably.
     juce_add_gui_app(MidiScorer
         PRODUCT_NAME "MidiScorer"
+        ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app-icon-master.png"
+        ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/app-icon-master.png"
     )
 else()
     juce_add_gui_app(MidiScorer
         PRODUCT_NAME "MidiScorer"
     )
+endif()
+
+if(APPLE)
+    set(MIDISCORER_MACOS_ICON "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/icons/MidiScorer.icns")
+    if(EXISTS "${MIDISCORER_MACOS_ICON}")
+        set_source_files_properties("${MIDISCORER_MACOS_ICON}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+        target_sources(MidiScorer PRIVATE "${MIDISCORER_MACOS_ICON}")
+
+        set_target_properties(MidiScorer PROPERTIES
+            MACOSX_BUNDLE_ICON_FILE "MidiScorer.icns"
+            XCODE_ATTRIBUTE_INFOPLIST_KEY_CFBundleIconFile "MidiScorer.icns"
+        )
+    else()
+        message(WARNING "MidiScorer.icns not found; macOS bundle will use the default icon until src/resources/icons/MidiScorer.icns is added.")
+    endif()
 endif()
 
 juce_generate_juce_header(MidiScorer)

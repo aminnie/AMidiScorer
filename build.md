@@ -109,6 +109,16 @@ Release executable:
 | App | `build/MidiScorer_artefacts/Debug/MidiScorer.exe` | `build/MidiScorer_artefacts/Release/MidiScorer.exe` |
 | Tests | `build/MidiScorerTests_artefacts/Debug/MidiScorerTests.exe` | `build/MidiScorerTests_artefacts/Release/MidiScorerTests.exe` |
 
+## Application icon
+
+MidiScorer follows the same pattern as AMidiOrgan:
+
+- Source artwork: `src/resources/icons/app-icon-master.png` (1024×1024 PNG with alpha)
+- **Windows:** CMake `ICON_BIG` / `ICON_SMALL` embed the PNG into the `.exe` (taskbar, title bar, Alt+Tab)
+- **macOS:** run `scripts/build-macos-icon.sh` on a Mac to produce `src/resources/icons/MidiScorer.icns`, then rebuild the app bundle
+
+After changing the icon PNG, re-run configure and rebuild so JUCE regenerates the embedded Windows icon resources. To tweak artwork size/padding, run `scripts/regenerate_app_icon.ps1` and rebuild.
+
 ## macOS
 
 macOS build steps are not documented here yet. When added, this section will cover:

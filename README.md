@@ -75,6 +75,8 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - `src/app/MainComponent.h` - score page UI controls, notation orchestration, playback sync
 - `src/app/PlayerTabComponent.h` - player page MIDI output selection
 - `src/app/TracksTabComponent.h` - Effects tab (per-track Chan/Mute/Solo/Volume/Reverb)
+- `src/resources/icons/app-icon-master.png` - application icon source (1024×1024 ARGB; embedded on Windows via CMake)
+- `src/resources/icons/MidiScorer.icns` - macOS bundle icon (generate with `scripts/build-macos-icon.sh`)
 - `src/midi/TempoMap.h` - tempo/time-signature/bar conversion
 - `src/midi/TrackNoteExtractor.h` - note-on/note-off pairing
 - `src/midi/MidiProjectLoader.h` - MIDI ingestion, SMF type validation, and metadata extraction
