@@ -38,18 +38,21 @@ if ! command -v clang >/dev/null 2>&1 && ! xcrun --find clang >/dev/null 2>&1; t
   exit 1
 fi
 
-if ! command -v brew >/dev/null 2>&1; then
-  echo "" >&2
-  echo "Homebrew is not installed. Install it from https://brew.sh (one line), then re-run:" >&2
-  echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"" >&2
-  echo "On Apple Silicon, you may need to add brew to PATH (the installer prints the commands)." >&2
-  exit 1
+HAS_BREW=0
+if command -v brew >/dev/null 2>&1; then
+  HAS_BREW=1
+  echo "==> Homebrew: $(brew --version | head -1)"
+else
+  echo "==> Homebrew not found; continuing with existing toolchain."
 fi
-
-echo "==> Homebrew: $(brew --version | head -1)"
 
 ensure_brew_pkg() {
   local name="$1"
+  if [[ "${HAS_BREW}" -ne 1 ]]; then
+    echo "Missing required tool '${name}' and Homebrew is unavailable." >&2
+    echo "Install Homebrew from https://brew.sh or install '${name}' manually, then re-run." >&2
+    exit 1
+  fi
   if brew list "${name}" >/dev/null 2>&1; then
     echo "==> ${name}: already installed"
   else
@@ -99,4 +102,4 @@ else
   echo "    JUCE already present."
 fi
 
-exec "${ROOT_DIR}/scripts/mac-build.sh" "$@"
+exec bash "${ROOT_DIR}/scripts/mac-build.sh" "$@"

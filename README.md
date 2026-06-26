@@ -8,8 +8,8 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 
 ## Current capabilities
 
-- Load `.mid` / `.midi` files (Standard MIDI File **type 1** required).
-  - type **0** files (single-track) are rejected with a warning modal asking you to convert the file in a MIDI editor
+- Load `.mid` / `.midi` files (Standard MIDI File type **1** and **0**).
+  - type **0** files (single-track) are auto-converted to an internal type-1 project model on load
   - SMPTE/non-PPQ timing is also rejected
 - Auto-load last saved UI preset when a MIDI file is loaded (if present).
 - Display up to three independent staffs:
@@ -33,8 +33,8 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Chord source selection:
   - dynamic per-track checkbox list (`Chord Tracks`) used for harmonic analysis
 - Playback controls (Score tab):
-  - **Start/Stop**, **Continue**, and bar start input
-  - on **Stop**, continue bar auto-fills with current bar
+  - **Start/Pause**, **Continue**, and bar start input
+  - optional A-B loop controls
 - Tabbed workspace (tab order: **Start**, **Score**, **Effects**):
   - `Start` tab for MIDI output device selection (transport controls are on the Score tab)
   - `Score` tab for notation/chord controls and renderers
@@ -102,9 +102,7 @@ See **[build.md](build.md)** for configure, build, test, and launch instructions
 Quick start (Windows):
 
 ```powershell
-cmake -S . -B build -DJUCE_ROOT="C:/JUCE"
-cmake --build build --config Debug --target MidiScorer MidiScorerTests
-ctest --test-dir build -C Debug --output-on-failure
+.\scripts\build.ps1 -Configuration Debug -Target All
 ```
 
 Requirements: CMake 3.22+, C++17, and a JUCE source checkout (details in `build.md`).
@@ -113,9 +111,10 @@ Quick start (macOS):
 
 ```bash
 ./scripts/mac-build.sh
-ctest --test-dir build-mac --output-on-failure
 open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 ```
+
+`mac-build.sh` configures, builds `MidiScorer` + `MidiScorerTests`, and runs `ctest`.
 
 ## How to use
 
@@ -139,7 +138,7 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 
 ## Notes and known limitations
 
-- Only Standard MIDI File **type 1** (multi-track) files are supported; type **0** is rejected on load.
+- Type **0** files are loaded via internal conversion; SMPTE/non-PPQ files remain unsupported.
 - SMPTE/non-PPQ MIDI timing is not supported.
 - Quantization is limited to 1/16 through whole-note values.
 - Rests, beaming, and accidental handling are practical approximations, not full engraving rules.
@@ -156,8 +155,7 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 
 - `MIDI ingest pipeline`
   - Entry point is `MidiProjectLoader::load()` in `src/midi/MidiProjectLoader.h`.
-  - Rejects SMF type **0** and SMPTE/non-PPQ files before building the project model.
-  - Type **0** rejection surfaces a warning modal from `MainComponent::loadMidiFile()`.
+  - Converts SMF type **0** to an internal type-1 model when enabled by caller and rejects SMPTE/non-PPQ files.
 - `Tempo/bar math`
   - `src/midi/TempoMap.h` is the authoritative timing layer.
 - `Chord detection`
@@ -178,5 +176,5 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
    - load MIDI
    - verify staff selectors and chord track checkboxes
    - verify Start/Stop/Continue behavior
-   - verify type **0** MIDI shows the conversion warning modal
+  - verify type **0** MIDI loads with auto-conversion status
    - verify live chord marker updates on playback

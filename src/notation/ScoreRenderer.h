@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <cmath>
+#include <functional>
 #include "ScoreModel.h"
 
 class ScoreRenderer final : public juce::Component
@@ -70,6 +71,11 @@ public:
         repaint();
     }
 
+    void setBarClickCallback(std::function<void(int)> callback)
+    {
+        onBarClicked = std::move(callback);
+    }
+
     void paint(juce::Graphics& g) override
     {
         const bool isDark = colorScheme == ColorScheme::dark;
@@ -114,7 +120,39 @@ public:
         }
     }
 
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        if (model == nullptr || model->empty() || onBarClicked == nullptr)
+            return;
+
+        const int bar = getBarNumberAtX(event.x);
+        if (bar > 0)
+            onBarClicked(bar);
+    }
+
 private:
+    int getBarNumberAtX(int x) const
+    {
+        if (model == nullptr || model->empty())
+            return -1;
+
+        const int clampedCenterBar = juce::jlimit(model->getFirstBar(), model->getLastBar(), currentBar);
+        auto bars = model->getWindowBars(clampedCenterBar, 2, 2);
+        if (bars.empty())
+            bars = model->getWindowBars(model->getLastBar(), 2, 2);
+        if (bars.empty())
+            return -1;
+
+        auto bounds = getLocalBounds().reduced(12);
+        const int barW = bounds.getWidth() / static_cast<int>(bars.size());
+        if (barW <= 0)
+            return -1;
+
+        int barIndex = (x - bounds.getX()) / barW;
+        barIndex = juce::jlimit(0, static_cast<int>(bars.size()) - 1, barIndex);
+        return bars[(size_t) barIndex].barNumber;
+    }
+
     struct SpelledPitch
     {
         int letter = 0;      // 0..6 => C..B
@@ -664,4 +702,5 @@ private:
     double liveChordQuarterInBar = 0.0;
     juce::String liveChordText;
     juce::String staffLabel;
+    std::function<void(int)> onBarClicked;
 };

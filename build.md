@@ -59,6 +59,14 @@ cmake --build build --config Debug --target MidiScorer MidiScorerTests
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
+### Preferred Windows helper script
+
+```powershell
+.\scripts\build.ps1 -Configuration Debug -Target All
+```
+
+This script configures, builds app+tests, and runs `ctest`.
+
 ### Launch the app
 
 Debug executable:
@@ -122,7 +130,17 @@ After changing the icon PNG, re-run configure and rebuild so JUCE regenerates th
 
 All commands below assume the repository root (`midiscorer/`) as the current directory.
 
-### First-time configure (Unix Makefiles)
+### Summary
+
+```bash
+git clone ...JUCE... .deps/JUCE
+./scripts/mac-build.sh
+open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
+```
+
+`./scripts/mac-build.sh` configures, builds `MidiScorer` + `MidiScorerTests`, and runs `ctest`.
+
+### First-time configure/build/test manually (Unix Makefiles)
 
 ```bash
 cmake -S . -B build-mac -DJUCE_ROOT="$PWD/.deps/JUCE" -DCMAKE_BUILD_TYPE=Debug
@@ -165,8 +183,8 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 
 ### macOS helper scripts
 
-- `./scripts/mac-build.sh` supports `--release`, `--ninja`, and `--xcode`
-- `./scripts/mac-bootstrap.sh` is a first-time setup helper that verifies tools, clones JUCE if missing, then runs `mac-build.sh`
+- `./scripts/mac-build.sh` supports `--release`, `--ninja`, and `--xcode` and runs tests by default.
+- `./scripts/mac-bootstrap.sh` is a first-time setup helper that verifies tools, clones JUCE if missing, then runs `mac-build.sh`.
 
 ### macOS output paths
 
@@ -184,6 +202,7 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 | Build + test | `cmake --build build --config Debug --target MidiScorer MidiScorerTests` |
 | Run tests | `ctest --test-dir build -C Debug --output-on-failure` |
 | Launch | `Start-Process "build/MidiScorer_artefacts/Debug/MidiScorer.exe"` |
+| Script helper | `.\scripts\build.ps1 -Configuration Debug -Target All` |
 
 | Task | macOS (Debug, Makefile/Ninja) |
 |------|--------------------------------|

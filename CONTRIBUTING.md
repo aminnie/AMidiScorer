@@ -9,6 +9,9 @@ Configure, build, and test: see **[build.md](build.md)**.
 After a successful build, run `ctest` for your active build directory and complete the smoke-test checklist below before submitting.
 - Windows example: `ctest --test-dir build -C Debug --output-on-failure`
 - macOS example: `ctest --test-dir build-mac --output-on-failure`
+- Helper scripts:
+  - Windows: `./scripts/build.ps1 -Configuration Debug -Target All`
+  - macOS: `./scripts/mac-build.sh`
 
 ## Expected change scope
 

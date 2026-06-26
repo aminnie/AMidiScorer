@@ -55,12 +55,19 @@ public:
                "Please open this file in a MIDI editor and save or export it as type 1, then try loading it again.";
     }
 
-    bool load(const juce::File& midiFile, MidiProjectData& outData, juce::String& error, bool* rejectedType0 = nullptr)
+    bool load(const juce::File& midiFile,
+              MidiProjectData& outData,
+              juce::String& error,
+              bool* rejectedType0 = nullptr,
+              bool allowType0AutoConvert = false,
+              bool* convertedType0 = nullptr)
     {
         error.clear();
         outData = {};
         if (rejectedType0 != nullptr)
             *rejectedType0 = false;
+        if (convertedType0 != nullptr)
+            *convertedType0 = false;
 
         juce::FileInputStream stream(midiFile);
         if (!stream.openedOk())
@@ -79,10 +86,15 @@ public:
 
         if (midiFileType == 0)
         {
-            error = getType0NotSupportedMessage();
-            if (rejectedType0 != nullptr)
-                *rejectedType0 = true;
-            return false;
+            if (!allowType0AutoConvert)
+            {
+                error = getType0NotSupportedMessage();
+                if (rejectedType0 != nullptr)
+                    *rejectedType0 = true;
+                return false;
+            }
+            if (convertedType0 != nullptr)
+                *convertedType0 = true;
         }
 
         const int timeFormat = parsed.getTimeFormat();

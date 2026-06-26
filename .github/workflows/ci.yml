@@ -37,6 +37,8 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
+          bash -n scripts/mac-build.sh
+          bash -n scripts/mac-bootstrap.sh
           cmake -S . -B build -DJUCE_ROOT="${{ github.workspace }}/juce" -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build tests (Windows)
@@ -74,3 +76,12 @@ jobs:
         shell: bash
         run: |
           cmake --build build --target MidiScorer
+
+      - name: Validate macOS app bundle metadata
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          APP_PATH="build/MidiScorer_artefacts/Debug/MidiScorer.app"
+          test -f "${APP_PATH}/Contents/Info.plist"
+          test -f "${APP_PATH}/Contents/Resources/MidiScorer.icns"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${APP_PATH}/Contents/Info.plist" | grep -Fx "org.midiscorer.app"

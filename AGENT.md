@@ -54,9 +54,9 @@ Configure, build, test, and launch: see **[build.md](build.md)** (Windows and ma
 
 Typical agent loop after code changes:
 
-1. `cmake --build build --config Debug --target MidiScorer MidiScorerTests`
-2. `ctest --test-dir build -C Debug --output-on-failure`
-3. Launch `build/MidiScorer_artefacts/Debug/MidiScorer.exe` for smoke checks
+1. Windows: `./scripts/build.ps1 -Configuration Debug -Target All`
+2. macOS: `./scripts/mac-build.sh`
+3. Launch the built app for smoke checks (`build/MidiScorer_artefacts/Debug/MidiScorer.exe` or `build-mac/MidiScorer_artefacts/Debug/MidiScorer.app`)
 
 ## Before finishing a coding task
 

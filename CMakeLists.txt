@@ -1,11 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(MidiScorer VERSION 0.1.0 LANGUAGES C CXX)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
 if(APPLE)
     set(MIDISCORER_MACOS_BUNDLE_ID "org.midiscorer.app" CACHE STRING "macOS bundle identifier")
     set(MIDISCORER_MACOS_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS deployment target")
@@ -19,6 +13,12 @@ if(APPLE)
         set(CMAKE_OSX_ARCHITECTURES "${MIDISCORER_MACOS_ARCHS}" CACHE STRING "Target macOS architectures" FORCE)
     endif()
 endif()
+
+project(MidiScorer VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(JUCE_ROOT "" CACHE PATH "Path to JUCE root (directory containing CMakeLists.txt)")
 

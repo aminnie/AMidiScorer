@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../src/midi/MidiProjectLoader.h"
+#include "../src/midi/MidiMixExporter.h"
 #include "../src/midi/TempoMap.h"
 #include "../src/midi/TrackNoteExtractor.h"
 #include "../src/notation/Quantizer.h"
@@ -8,6 +9,7 @@
 #include "../src/playback/MidiFilePlaybackEngineAdapter.h"
 #include "../src/playback/TrackMixProcessor.h"
 #include "../src/playback/TrackMixMidiSeed.h"
+#include <iostream>
 
 namespace
 {
@@ -19,10 +21,12 @@ void expectTrue(bool condition, const juce::String& label)
     {
         ++failures;
         juce::Logger::writeToLog("FAIL: " + label);
+        std::cout << "FAIL: " << label << std::endl;
     }
     else
     {
         juce::Logger::writeToLog("PASS: " + label);
+        std::cout << "PASS: " << label << std::endl;
     }
 }
 
@@ -111,11 +115,19 @@ void testMidiLoaderRejectsType0()
     MidiProjectData project;
     juce::String error;
     bool rejectedType0 = false;
-    const bool ok = loader.load(file, project, error, &rejectedType0);
-    expectTrue(!ok, "Loader rejects MIDI file type 0");
+    const bool ok = loader.load(file, project, error, &rejectedType0, false);
+    expectTrue(!ok, "Loader rejects MIDI file type 0 when auto-convert is disabled");
     expectTrue(rejectedType0, "Loader flags type 0 rejection");
     expectTrue(error.containsIgnoreCase("type 0"), "Loader reports type 0 in error message");
     expectTrue(error.containsIgnoreCase("type 1"), "Loader asks user to convert to type 1");
+
+    MidiProjectData convertedProject;
+    juce::String convertError;
+    bool convertedType0 = false;
+    const bool convertedOk = loader.load(file, convertedProject, convertError, nullptr, true, &convertedType0);
+    expectTrue(convertedOk, "Loader auto-converts MIDI file type 0 when enabled");
+    expectTrue(convertedType0, "Loader reports type 0 conversion");
+    expectTrue(!convertedProject.tracks.empty(), "Converted type 0 project has tracks");
 }
 
 void testMidiLoaderRejectsSmpte()
@@ -409,6 +421,117 @@ void testTrackMixMidiSeed()
     expectTrue(state.getReverb(0) == 22, "Saved preset reverb remains after manual set");
     expectTrue(state.getChannel(0) == 8, "Saved preset channel remains after manual set");
 }
+
+void testMidiMixExporter()
+{
+    MidiProjectData project;
+    project.file = juce::File::getCurrentWorkingDirectory().getChildFile("fixture.mid");
+    project.maxBar = 2;
+    project.tempoMap.build(480.0,
+                           { { 0.0, 120.0 } },
+                           { { 0.0, 4, 4 } },
+                           960.0);
+
+    MidiTrackData track1;
+    track1.name = "Track 1";
+    auto t1On = juce::MidiMessage::noteOn(1, 60, (juce::uint8) 100);
+    t1On.setTimeStamp(0.0);
+    track1.sequence.addEvent(t1On);
+    auto t1Off = juce::MidiMessage::noteOff(1, 60);
+    t1Off.setTimeStamp(240.0);
+    track1.sequence.addEvent(t1Off);
+
+    MidiTrackData track2;
+    track2.name = "Track 2";
+    auto t2On = juce::MidiMessage::noteOn(2, 67, (juce::uint8) 110);
+    t2On.setTimeStamp(0.0);
+    track2.sequence.addEvent(t2On);
+    auto t2Off = juce::MidiMessage::noteOff(2, 67);
+    t2Off.setTimeStamp(240.0);
+    track2.sequence.addEvent(t2Off);
+
+    project.tracks.push_back(track1);
+    project.tracks.push_back(track2);
+
+    TrackMixState mixState;
+    mixState.resizeForTrackCount(2);
+    mixState.setMuted(0, true);
+    mixState.setChannel(1, 5);
+
+    juce::TemporaryFile tempFile("mixed-export.mid");
+    juce::String error;
+    expectTrue(MidiMixExporter::exportMixedType1File(project, mixState, tempFile.getFile(), error),
+               "MIDI mix exporter writes mixed MIDI file");
+
+    juce::FileInputStream stream(tempFile.getFile());
+    juce::MidiFile exported;
+    expectTrue(stream.openedOk() && exported.readFrom(stream), "Exported MIDI can be parsed");
+
+    int noteOnCount = 0;
+    bool track1Removed = true;
+    bool remappedToChannel5 = false;
+    for (int track = 0; track < exported.getNumTracks(); ++track)
+    {
+        if (const auto* seq = exported.getTrack(track))
+        {
+            for (int i = 0; i < seq->getNumEvents(); ++i)
+            {
+                if (const auto* ev = seq->getEventPointer(i))
+                {
+                    const auto& msg = ev->message;
+                    if (msg.isNoteOn())
+                    {
+                        ++noteOnCount;
+                        if (msg.getNoteNumber() == 60)
+                            track1Removed = false;
+                        if (msg.getNoteNumber() == 67 && msg.getChannel() == 5)
+                            remappedToChannel5 = true;
+                    }
+                }
+            }
+        }
+    }
+
+    expectTrue(noteOnCount >= 1, "Exported MIDI contains note-on events");
+    expectTrue(track1Removed, "Muted track events are removed in exported MIDI");
+    expectTrue(remappedToChannel5, "Exported MIDI applies channel remap");
+}
+
+void testCheckedInFixturesLoad()
+{
+    auto fixturesDir = juce::File::getCurrentWorkingDirectory().getChildFile("../tests/fixtures");
+    if (!fixturesDir.isDirectory())
+    {
+        const juce::File testFilePath(__FILE__);
+        fixturesDir = testFilePath.getParentDirectory().getChildFile("fixtures");
+    }
+    const auto fixtureA = fixturesDir.getChildFile("tempo_time_sig.mid");
+    const auto fixtureB = fixturesDir.getChildFile("ties_syncopation.mid");
+
+    expectTrue(fixtureA.existsAsFile(), "Fixture tempo_time_sig.mid is checked in");
+    expectTrue(fixtureB.existsAsFile(), "Fixture ties_syncopation.mid is checked in");
+
+    MidiProjectLoader loader;
+    juce::String error;
+    MidiProjectData projectA;
+    MidiProjectData projectB;
+
+    const bool loadA = loader.load(fixtureA, projectA, error);
+    expectTrue(loadA, "Loader can parse tempo_time_sig fixture");
+    if (!loadA)
+        juce::Logger::writeToLog("Fixture load error A: " + error);
+
+    error.clear();
+    const bool loadB = loader.load(fixtureB, projectB, error);
+    expectTrue(loadB, "Loader can parse ties_syncopation fixture");
+    if (!loadB)
+        juce::Logger::writeToLog("Fixture load error B: " + error);
+
+    if (loadA)
+        expectTrue(projectA.maxBar >= 1, "tempo_time_sig fixture yields valid bar range");
+    if (loadB)
+        expectTrue(!projectB.tracks.empty(), "ties_syncopation fixture yields at least one track");
+}
 }
 
 int main()
@@ -426,6 +549,8 @@ int main()
     testMidiPlaybackAdapterSeekAndDispatch();
     testTrackMixProcessor();
     testTrackMixMidiSeed();
+    testMidiMixExporter();
+    testCheckedInFixturesLoad();
 
     if (failures == 0)
     {

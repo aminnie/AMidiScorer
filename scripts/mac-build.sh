@@ -15,6 +15,11 @@
 
 set -euo pipefail
 
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "This script is for macOS only." >&2
+  exit 1
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JUCE_ROOT="${JUCE_ROOT:-${ROOT_DIR}/.deps/JUCE}"
 
@@ -62,6 +67,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${USE_XCODE}" -eq 1 && "${USE_NINJA}" -eq 1 ]]; then
+  echo "Choose either --xcode or --ninja, not both." >&2
+  exit 1
+fi
 
 if [[ -z "${BUILD_DIR}" ]]; then
   if [[ "${USE_XCODE}" -eq 1 ]]; then
@@ -118,7 +128,8 @@ if [[ "${USE_XCODE}" -eq 1 ]]; then
   XCODE_CONFIG="Debug"
   [[ "${BUILD_TYPE}" == "Release" ]] && XCODE_CONFIG="Release"
   cmake -S . -B "${BUILD_DIR}" -G Xcode -DJUCE_ROOT="${JUCE_ROOT}"
-  cmake --build "${BUILD_DIR}" --config "${XCODE_CONFIG}" --target MidiScorer
+  cmake --build "${BUILD_DIR}" --config "${XCODE_CONFIG}" --target MidiScorer MidiScorerTests
+  ctest --test-dir "${BUILD_DIR}" --output-on-failure --timeout 120 --build-config "${XCODE_CONFIG}"
   echo ""
   echo "Built: ${BUILD_DIR}/MidiScorer_artefacts/${XCODE_CONFIG}/MidiScorer.app"
   echo "Run:   open \"${BUILD_DIR}/MidiScorer_artefacts/${XCODE_CONFIG}/MidiScorer.app\""
@@ -130,7 +141,8 @@ else
   fi
   # ${GEN_ARGS[@]+...} avoids "unbound variable" under `set -u` when the array is empty (macOS bash 3.2).
   cmake -S . -B "${BUILD_DIR}" ${GEN_ARGS[@]+"${GEN_ARGS[@]}"} -DJUCE_ROOT="${JUCE_ROOT}" -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
-  cmake --build "${BUILD_DIR}" --target MidiScorer
+  cmake --build "${BUILD_DIR}" --target MidiScorer MidiScorerTests
+  ctest --test-dir "${BUILD_DIR}" --output-on-failure --timeout 120
   ART_SUB="${BUILD_TYPE}"
   echo ""
   echo "Built: ${BUILD_DIR}/MidiScorer_artefacts/${ART_SUB}/MidiScorer.app"
