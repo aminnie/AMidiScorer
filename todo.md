@@ -223,7 +223,9 @@ This checklist tracks code-review findings and implementation work items.
   - Files: `tests/fixtures/`, `tests/fixtures/fixture-specs.md`, `tests/test_main.cpp`
   - Acceptance:
     - Fixture specs for syncopation/altered chords are represented by checked-in files and tests.
-- [ ] **P4 / L** Add score export options (PNG/PDF only) and/or rendering regression tests.
-  - Files: `src/notation/ScoreRenderer.h`, `src/app/MainComponent.h`, tests/docs as needed
+- [x] **P4 / L** Add score export options (PNG/PDF only) and/or rendering regression tests.
+  - Files: `src/notation/ScoreRenderer.h`, `src/notation/ScoreModel.h`, `src/notation/SimplePdfWriter.h`, `src/app/ScorePdfExporter.h`, `src/app/MainComponent.h`, `tests/test_main.cpp`, docs
   - Acceptance:
-    - A documented non-MIDI export path (PNG/PDF) or regression-testing path improves score-output reliability without rewriting source MIDI files.
+    - Score tab now provides a non-destructive full-song **Export PDF...** path that renders bars `1..maxBar` for non-empty staff lanes and preserves static chord labels.
+    - Live chord markers are excluded from exported PDFs.
+    - Regression tests validate PDF header/write success and page-count growth on longer songs.

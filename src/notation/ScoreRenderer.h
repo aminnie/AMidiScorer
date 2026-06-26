@@ -22,6 +22,13 @@ public:
         light
     };
 
+    struct BarStripPaintOptions
+    {
+        bool highlightCurrentBar = false;
+        bool includeLiveChordMarker = false;
+        int currentBarForHighlight = 1;
+    };
+
     void setScoreModel(const ScoreModel* modelPtr)
     {
         model = modelPtr;
@@ -47,6 +54,11 @@ public:
     {
         colorScheme = scheme;
         repaint();
+    }
+
+    ColorScheme getColorScheme() const
+    {
+        return colorScheme;
     }
 
     void setKeySignature(bool hasSignature, int sharpsOrFlats)
@@ -96,9 +108,7 @@ public:
         }
 
         const int clampedCenterBar = juce::jlimit(model->getFirstBar(), model->getLastBar(), currentBar);
-        auto bars = model->getWindowBars(clampedCenterBar, 2, 2);
-        if (bars.empty())
-            bars = model->getWindowBars(model->getLastBar(), 2, 2);
+        const auto bars = getCurrentWindowBars();
         if (bars.empty())
         {
             g.setColour(emptyText);
@@ -107,15 +117,32 @@ public:
             return;
         }
 
-        auto bounds = getLocalBounds().reduced(12);
-        const int barW = bounds.getWidth() / static_cast<int>(bars.size());
-        int x = bounds.getX();
+        BarStripPaintOptions options;
+        options.highlightCurrentBar = true;
+        options.includeLiveChordMarker = true;
+        options.currentBarForHighlight = clampedCenterBar;
+        paintBarStrip(g, getLocalBounds().reduced(12), bars, options);
+    }
 
+    void paintBarStrip(juce::Graphics& g,
+                       juce::Rectangle<int> bounds,
+                       const std::vector<ScoreBar>& bars,
+                       const BarStripPaintOptions& options = {}) const
+    {
+        if (bars.empty())
+            return;
+
+        const int barW = bounds.getWidth() / static_cast<int>(bars.size());
+        if (barW <= 0)
+            return;
+
+        int x = bounds.getX();
         for (size_t i = 0; i < bars.size(); ++i)
         {
             const auto& bar = bars[i];
             juce::Rectangle<int> barRect(x, bounds.getY(), barW, bounds.getHeight());
-            drawBar(g, bar, barRect, bar.barNumber == clampedCenterBar, i == 0);
+            const bool isCurrent = options.highlightCurrentBar && bar.barNumber == options.currentBarForHighlight;
+            drawBar(g, bar, barRect, isCurrent, i == 0, options.includeLiveChordMarker);
             x += barW;
         }
     }
@@ -136,10 +163,7 @@ private:
         if (model == nullptr || model->empty())
             return -1;
 
-        const int clampedCenterBar = juce::jlimit(model->getFirstBar(), model->getLastBar(), currentBar);
-        auto bars = model->getWindowBars(clampedCenterBar, 2, 2);
-        if (bars.empty())
-            bars = model->getWindowBars(model->getLastBar(), 2, 2);
+        const auto bars = getCurrentWindowBars();
         if (bars.empty())
             return -1;
 
@@ -151,6 +175,18 @@ private:
         int barIndex = (x - bounds.getX()) / barW;
         barIndex = juce::jlimit(0, static_cast<int>(bars.size()) - 1, barIndex);
         return bars[(size_t) barIndex].barNumber;
+    }
+
+    std::vector<ScoreBar> getCurrentWindowBars() const
+    {
+        if (model == nullptr || model->empty())
+            return {};
+
+        const int clampedCenterBar = juce::jlimit(model->getFirstBar(), model->getLastBar(), currentBar);
+        auto bars = model->getWindowBars(clampedCenterBar, 2, 2);
+        if (bars.empty())
+            bars = model->getWindowBars(model->getLastBar(), 2, 2);
+        return bars;
     }
 
     struct SpelledPitch
@@ -465,7 +501,8 @@ private:
                  const ScoreBar& bar,
                  const juce::Rectangle<int>& barRect,
                  bool isCurrent,
-                 bool isFirstVisibleBar) const
+                 bool isFirstVisibleBar,
+                 bool includeLiveChordMarker) const
     {
         const bool isDark = colorScheme == ColorScheme::dark;
         const auto barFill = isDark
@@ -572,7 +609,10 @@ private:
             }
         }
 
-        if (liveChordVisible && bar.barNumber == liveChordBarNumber && liveChordText.isNotEmpty())
+        if (includeLiveChordMarker
+            && liveChordVisible
+            && bar.barNumber == liveChordBarNumber
+            && liveChordText.isNotEmpty())
         {
             const double clampedQuarter = juce::jlimit(0.0, juce::jmax(0.0, qPerBar), liveChordQuarterInBar);
             const float markerX = left + static_cast<float>((clampedQuarter / juce::jmax(0.25, qPerBar)) * width);

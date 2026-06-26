@@ -19,6 +19,7 @@
 #include "../playback/TrackMixState.h"
 #include "../playback/TrackMixMidiSeed.h"
 #include "PresetFileStore.h"
+#include "ScorePdfExporter.h"
 #include "ScoreRebuildService.h"
 #include "TransportCoordinator.h"
 
@@ -181,6 +182,10 @@ public:
         loadPresetButton.setButtonText("Load Preset");
         loadPresetButton.onClick = [this] { (void) loadUiPreset(); };
 
+        addAndMakeVisible(exportPdfButton);
+        exportPdfButton.setButtonText("Export PDF...");
+        exportPdfButton.onClick = [this] { exportScorePdf(); };
+
         addAndMakeVisible(statusLabel);
         statusLabel.setJustificationType(juce::Justification::centredLeft);
 
@@ -284,8 +289,9 @@ public:
         scoreColorToggle.setBounds(row.removeFromLeft(106).reduced(4, 0));
         savePresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
         loadPresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
+        exportPdfButton.setBounds(row.removeFromLeft(108).reduced(4, 0));
         openRecentButton.setBounds(row.removeFromLeft(94).reduced(4, 0));
-        recentFilesSelector.setBounds(row.removeFromLeft(210).reduced(4, 0));
+        recentFilesSelector.setBounds(row.removeFromLeft(170).reduced(4, 0));
         chordTracksLabel.setBounds(row);
 
         area.removeFromTop(6);
@@ -2174,6 +2180,86 @@ private:
         });
     }
 
+    std::vector<ScorePdfExporter::StaffExportLane> buildScoreExportLanes() const
+    {
+        std::vector<ScorePdfExporter::StaffExportLane> lanes;
+        lanes.reserve(3);
+
+        if (!scoreModel1.empty())
+            lanes.push_back({ &scoreModel1, &scoreRenderer });
+        if (!scoreModel2.empty())
+            lanes.push_back({ &scoreModel2, &scoreRenderer2 });
+        if (!scoreModel3.empty())
+            lanes.push_back({ &scoreModel3, &scoreRenderer3 });
+
+        return lanes;
+    }
+
+    void exportScorePdf()
+    {
+        if (!hasLoadedProject())
+        {
+            showWarningModal(this, "Export PDF", "Load a MIDI file before exporting a score PDF.");
+            return;
+        }
+
+        const auto lanes = buildScoreExportLanes();
+        if (lanes.empty())
+        {
+            showWarningModal(this, "Export PDF", "No rendered staff notation is available to export.");
+            return;
+        }
+
+        const auto defaultDir = lastMidiDirectory.isDirectory()
+            ? lastMidiDirectory
+            : project.file.getParentDirectory();
+        const auto baseName = project.file.existsAsFile()
+            ? project.file.getFileNameWithoutExtension()
+            : juce::String("score");
+        const auto defaultFile = defaultDir.getChildFile(baseName + "_score.pdf");
+
+        exportPdfFileChooser = std::make_unique<juce::FileChooser>(
+            "Export score PDF",
+            defaultFile,
+            "*.pdf",
+            false,
+            false,
+            this);
+
+        const auto chooserFlags = juce::FileBrowserComponent::saveMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::warnAboutOverwriting;
+        exportPdfFileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& chooser)
+        {
+            auto outputFile = chooser.getResult();
+            if (outputFile == juce::File())
+                return;
+            if (!outputFile.hasFileExtension("pdf"))
+                outputFile = outputFile.withFileExtension(".pdf");
+
+            juce::String error;
+            int pageCount = 0;
+            ScorePdfExporter::ExportOptions options;
+            options.title = project.file.existsAsFile()
+                ? project.file.getFileNameWithoutExtension()
+                : juce::String("MidiScorer Score");
+            options.subtitle = "Bars 1-" + juce::String(juce::jmax(1, project.maxBar));
+            if (!ScorePdfExporter::exportToFile(outputFile, buildScoreExportLanes(), options, error, &pageCount))
+            {
+                const auto message = error.isNotEmpty() ? error : juce::String("Failed to export PDF.");
+                showWarningModal(this, "Export PDF", message);
+                return;
+            }
+
+            lastMidiDirectory = outputFile.getParentDirectory();
+            setStatusMessage("Exported PDF: "
+                             + outputFile.getFileName()
+                             + " ("
+                             + juce::String(pageCount)
+                             + (pageCount == 1 ? " page)" : " pages)"));
+        });
+    }
+
     void refreshTrackSelectors()
     {
         staff1TrackSelector.clear(juce::dontSendNotification);
@@ -2496,6 +2582,7 @@ private:
     juce::TextEditor loopEndInput;
     juce::TextButton savePresetButton;
     juce::TextButton loadPresetButton;
+    juce::TextButton exportPdfButton;
     juce::ComboBox recentFilesSelector;
     juce::TextButton openRecentButton;
     juce::Label statusLabel;
@@ -2523,6 +2610,7 @@ private:
     MidiOutputDevice midiOutputDevice;
     TrackMixState trackMixState;
     std::unique_ptr<juce::FileChooser> fileChooser;
+    std::unique_ptr<juce::FileChooser> exportPdfFileChooser;
     juce::File lastMidiDirectory;
     juce::String lastLoadedMidiPath;
     std::vector<juce::String> recentMidiFiles;

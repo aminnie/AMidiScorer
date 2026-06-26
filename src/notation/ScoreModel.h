@@ -127,21 +127,29 @@ public:
 
     std::vector<ScoreBar> getWindowBars(int centerBar, int left = 2, int right = 2) const
     {
+        const auto from = juce::jmax(firstBar, centerBar - left);
+        const auto to = juce::jmin(lastBar, centerBar + right);
+        return getBarsInRange(from, to);
+    }
+
+    std::vector<ScoreBar> getBarsInRange(int fromBar, int toBar) const
+    {
         std::vector<ScoreBar> out;
         if (bars.empty())
             return out;
 
-        const auto from = juce::jmax(firstBar, centerBar - left);
-        const auto to = juce::jmin(lastBar, centerBar + right);
-        out.reserve(static_cast<size_t>(juce::jmax(0, to - from + 1)));
+        const auto from = juce::jmax(firstBar, fromBar);
+        const auto to = juce::jmin(lastBar, toBar);
+        if (to < from)
+            return out;
 
+        out.reserve(static_cast<size_t>(to - from + 1));
         for (int b = from; b <= to; ++b)
         {
             const auto idx = barToIndex(b);
             if (isValidIndex(idx))
                 out.push_back(bars[(size_t) idx]);
         }
-
         return out;
     }
 

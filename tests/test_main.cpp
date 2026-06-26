@@ -9,6 +9,7 @@
 #include "../src/playback/PlaybackController.h"
 #include "../src/playback/TrackMixProcessor.h"
 #include "../src/playback/TrackMixMidiSeed.h"
+#include "../src/app/ScorePdfExporter.h"
 #include "TestFixturePaths.h"
 #include <iostream>
 #include <set>
@@ -385,6 +386,166 @@ void testWindowClampBehaviorForScoreWindow()
     expectTrue(!lowWindow.empty(), "Low clamped bar produces a non-empty score window");
 }
 
+void testScoreModelGetBarsInRange()
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 7680.0);
+
+    ScoreModel emptyModel;
+    const auto emptyRange = emptyModel.getBarsInRange(1, 4);
+    expectTrue(emptyRange.empty(), "Empty ScoreModel returns empty explicit bar range");
+
+    QuantizedNote note;
+    note.midiNote = 64;
+    note.startQuarter = 0.0;
+    note.durationQuarter = 1.0;
+    note.value = NoteValue::quarter;
+
+    ScoreModel model;
+    model.build(map, std::vector<QuantizedNote> { note }, {}, 4);
+
+    const auto middleRange = model.getBarsInRange(2, 3);
+    expectTrue(middleRange.size() == 2, "Explicit bar range returns requested bars");
+    if (middleRange.size() == 2)
+    {
+        expectTrue(middleRange[0].barNumber == 2, "Explicit bar range starts at requested bar");
+        expectTrue(middleRange[1].barNumber == 3, "Explicit bar range ends at requested bar");
+    }
+
+    const auto clampedRange = model.getBarsInRange(-20, 99);
+    expectTrue(clampedRange.size() == 4, "Explicit bar range clamps to model boundaries");
+}
+
+ScoreModel makeTestScoreModelWithBarCount(int barCount)
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 3840.0 * static_cast<double>(juce::jmax(1, barCount)));
+
+    std::vector<QuantizedNote> notes;
+    notes.reserve(static_cast<size_t>(juce::jmax(1, barCount)));
+    for (int bar = 0; bar < juce::jmax(1, barCount); ++bar)
+    {
+        QuantizedNote note;
+        note.midiNote = 60 + (bar % 5);
+        note.startQuarter = static_cast<double>(bar) * 4.0;
+        note.durationQuarter = 1.0;
+        note.value = NoteValue::quarter;
+        notes.push_back(note);
+    }
+
+    ScoreModel model;
+    model.build(map, notes, {}, juce::jmax(1, barCount));
+    return model;
+}
+
+void testScorePdfExportWritesValidPdf()
+{
+    auto model = makeTestScoreModelWithBarCount(12);
+    ScoreRenderer renderer;
+    renderer.setScoreModel(&model);
+    renderer.setClefType(ScoreRenderer::ClefType::treble);
+    renderer.setStaffLabel("Test Staff");
+    renderer.setCurrentBar(1);
+
+    ScorePdfExporter::ExportOptions options;
+    options.title = "PdfExportValid";
+    options.subtitle = "Fixture";
+    options.barsPerRow = 4;
+
+    const auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("midiscorer_pdf_valid_", ".pdf", false);
+    juce::String error;
+    int pageCount = 0;
+    const bool ok = ScorePdfExporter::exportToFile(
+        tempFile,
+        std::vector<ScorePdfExporter::StaffExportLane> { { &model, &renderer } },
+        options,
+        error,
+        &pageCount);
+
+    expectTrue(ok, "Score PDF export returns success for valid staff model");
+    if (!ok)
+        std::cout << "PDF export error: " << error << std::endl;
+    expectTrue(tempFile.existsAsFile(), "Score PDF export writes output file");
+    expectTrue(tempFile.getSize() > 1024, "Score PDF export writes non-trivial PDF content");
+    expectTrue(pageCount >= 1, "Score PDF export reports at least one page");
+
+    juce::MemoryBlock data;
+    const bool loaded = tempFile.loadFileAsData(data);
+    expectTrue(loaded && data.getSize() >= 4, "Score PDF output can be read for header validation");
+    if (loaded && data.getSize() >= 4)
+    {
+        const auto* bytes = static_cast<const char*>(data.getData());
+        const bool hasPdfHeader = std::memcmp(bytes, "%PDF", 4) == 0;
+        expectTrue(hasPdfHeader, "Score PDF output starts with %PDF header");
+    }
+
+    if (tempFile.existsAsFile())
+        tempFile.deleteFile();
+}
+
+void testScorePdfExportPageCountScalesWithBars()
+{
+    auto shortModel = makeTestScoreModelWithBarCount(4);
+    auto longModel = makeTestScoreModelWithBarCount(32);
+
+    ScoreRenderer shortRenderer;
+    shortRenderer.setScoreModel(&shortModel);
+    shortRenderer.setClefType(ScoreRenderer::ClefType::treble);
+    shortRenderer.setCurrentBar(1);
+    shortRenderer.setStaffLabel("Short");
+
+    ScoreRenderer longRenderer;
+    longRenderer.setScoreModel(&longModel);
+    longRenderer.setClefType(ScoreRenderer::ClefType::treble);
+    longRenderer.setCurrentBar(1);
+    longRenderer.setStaffLabel("Long");
+
+    ScorePdfExporter::ExportOptions options;
+    options.title = "PdfExportPages";
+    options.barsPerRow = 4;
+
+    const auto shortFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("midiscorer_pdf_short_", ".pdf", false);
+    const auto longFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("midiscorer_pdf_long_", ".pdf", false);
+
+    juce::String shortError;
+    juce::String longError;
+    int shortPages = 0;
+    int longPages = 0;
+
+    const bool shortOk = ScorePdfExporter::exportToFile(
+        shortFile,
+        std::vector<ScorePdfExporter::StaffExportLane> { { &shortModel, &shortRenderer } },
+        options,
+        shortError,
+        &shortPages);
+    const bool longOk = ScorePdfExporter::exportToFile(
+        longFile,
+        std::vector<ScorePdfExporter::StaffExportLane> { { &longModel, &longRenderer } },
+        options,
+        longError,
+        &longPages);
+
+    expectTrue(shortOk, "Short score PDF export succeeds");
+    expectTrue(longOk, "Long score PDF export succeeds");
+    if (!shortOk)
+        std::cout << "Short PDF export error: " << shortError << std::endl;
+    if (!longOk)
+        std::cout << "Long PDF export error: " << longError << std::endl;
+    expectTrue(longPages > shortPages, "Longer score export produces more PDF pages");
+
+    if (shortFile.existsAsFile())
+        shortFile.deleteFile();
+    if (longFile.existsAsFile())
+        longFile.deleteFile();
+}
+
 void testMidiPlaybackAdapterSeekAndDispatch()
 {
     MidiFilePlaybackEngineAdapter adapter;
@@ -687,6 +848,9 @@ int main()
     testChordDetectorResetsAcrossSilence();
     testScoreModelNormalizesChordQuarterInBar();
     testWindowClampBehaviorForScoreWindow();
+    testScoreModelGetBarsInRange();
+    testScorePdfExportWritesValidPdf();
+    testScorePdfExportPageCountScalesWithBars();
     testMidiPlaybackAdapterSeekAndDispatch();
     testTrackMixProcessor();
     testTrackMixMidiSeed();

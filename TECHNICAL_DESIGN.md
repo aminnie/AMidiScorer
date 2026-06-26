@@ -24,7 +24,9 @@ Core modules:
 - `src/notation/Quantizer.h` - rhythmic quantization
 - `src/notation/ScoreModel.h` - score-domain symbols (notes, rests, ties, chords)
 - `src/notation/ScoreRenderer.h` - drawing engine for staff notation
+- `src/notation/SimplePdfWriter.h` - minimal JPEG-backed PDF writing utility
 - `src/harmony/ChordDetector.h` - chord-template detection and naming
+- `src/app/ScorePdfExporter.h` - full-song score export pagination/orchestration
 - `src/app/AppTabsHost.h` - top-level tab host (`Start`, `Score`, `Effects`)
 - `src/app/MainComponent.h` - score-page orchestration, UI state, playback sync
 - `src/app/PlayerTabComponent.h` - player-page MIDI output UI
@@ -48,8 +50,9 @@ Core modules:
    - computes chord events via `ChordDetector::detect()`
    - builds score bars via `ScoreModel::build()`
 5. `ScoreRenderer` paints rolling 5-bar windows centered on current playback bar.
-6. During playback, `timerCallback()` updates current bar/live chord markers and dispatches scheduled MIDI events to the selected output device.
-7. Before dispatch, each event is filtered/scaled/remapped by track mix state (mute/solo gate, channel remap, volume/reverb scaling).
+6. `MainComponent::exportScorePdf()` can render full-song pages through `ScorePdfExporter` and persist them via `SimplePdfWriter`.
+7. During playback, `timerCallback()` updates current bar/live chord markers and dispatches scheduled MIDI events to the selected output device.
+8. Before dispatch, each event is filtered/scaled/remapped by track mix state (mute/solo gate, channel remap, volume/reverb scaling).
 
 ## 2.0) MIDI file requirements
 
@@ -193,6 +196,20 @@ The rendered window is a fixed rolling context:
 - 2 bars after current
 
 `setCurrentBar()` clamps to model range, preventing invalid view states near edges.
+
+### 3.8 Full-song PDF export path
+
+Score export reuses the existing notation stack rather than building a second renderer:
+
+1. `MainComponent` gathers non-empty staff lanes (`ScoreModel` + `ScoreRenderer` pairs).
+2. `ScorePdfExporter` paginates bars `1..maxBar` in fixed-size systems (`barsPerRow`).
+3. For each system/lane, `ScoreRenderer::paintBarStrip(...)` draws bars with:
+   - static chords enabled,
+   - live chord marker disabled,
+   - no playback highlight.
+4. Page images are passed to `SimplePdfWriter`, which embeds JPEG page images into a valid PDF document.
+
+This keeps export non-destructive and consistent with on-screen notation behavior.
 
 ## 4) Chord detection design
 

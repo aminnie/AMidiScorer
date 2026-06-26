@@ -30,7 +30,9 @@ Use these modules as the source of truth for each concern:
 - `src/notation/Quantizer.h` - note duration/start quantization
 - `src/notation/ScoreModel.h` - score-domain symbols (notes, rests, ties, chords)
 - `src/notation/ScoreRenderer.h` - rendering only (visual layer)
+- `src/notation/SimplePdfWriter.h` - PDF writer for rendered score pages
 - `src/harmony/ChordDetector.h` - chord detection + naming policy
+- `src/app/ScorePdfExporter.h` - full-song score PDF pagination/export orchestration
 - `src/playback/PlaybackController.h` - playback time/bar state
 - `src/playback/TrackMixState.h` - per-track mix state (channel, volume, reverb, mute, solo)
 - `src/playback/TrackMixProcessor.h` - playback mix gating, channel remap, scaling

@@ -59,12 +59,16 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Non-destructive workflow:
   - loaded MIDI files are treated as source material and are not rewritten by the app
   - user edits are persisted in profile data and can be reloaded with **Load Preset**
+- Full-song score PDF export:
+  - **Export PDF...** writes a multi-page rendered score for bars `1..maxBar` across all non-empty staff lanes
+  - export includes static chord labels and excludes live playback chord markers
+  - output is a rendered document (non-MIDI), preserving the app's non-destructive workflow
 - Display options:
   - `Light Score` / dark score toggle (Light Score is default)
   - status line order: **Sig**, **Bar**, playback message, **Tempo**, **KeySrc**
   - `Save Preset` turns red when score song settings are dirty; returns to default after save/load
 - Score tab UI layout (row summary):
-  - row 1: Load MIDI, Start/Stop, Continue, Bar, accidental/alias, Light Score, Save/Load Preset
+  - row 1: Load MIDI, Start/Stop, Continue, Bar, accidental/alias, Light Score, Save/Load Preset, Export PDF
   - row 2: staff track/clef selectors
   - row 3: Chord Tracks checkboxes
   - row 4: Tempo, Key, Transpose, status line
@@ -76,6 +80,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - `Main.cpp` - JUCE application entry point
 - `src/app/AppTabsHost.h` - top-level tab container (`Start` + `Score` + `Effects`)
 - `src/app/MainComponent.h` - score page UI controls, notation orchestration, playback sync
+- `src/app/ScorePdfExporter.h` - full-song score pagination/export assembly
 - `src/app/PlayerTabComponent.h` - player page MIDI output selection
 - `src/app/TracksTabComponent.h` - Effects tab (per-track Chan/Mute/Solo/Volume/Reverb)
 - `src/resources/icons/app-icon-master.png` - application icon source (1024×1024 ARGB; embedded on Windows via CMake)
@@ -86,6 +91,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - `src/notation/Quantizer.h` - rhythmic quantization
 - `src/notation/ScoreModel.h` - score bars/notes/chords/rest insertion
 - `src/notation/ScoreRenderer.h` - score drawing and live chord marker rendering
+- `src/notation/SimplePdfWriter.h` - minimal PDF writer for rasterized score pages
 - `src/harmony/ChordDetector.h` - chord analysis and naming options
 - `src/playback/PlaybackClock.h` - playback timing core
 - `src/playback/PlaybackController.h` - playback state/current bar implementing position-source interface
@@ -135,9 +141,12 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
    - chord naming options
    - score color mode
 7. Use **Score** tab to view/edit notation options and track assignments.
-8. Use **Start** tab to select a MIDI output device.
-9. Use **Score** tab **Start/Stop**, **Continue**, and **Bar** for playback transport.
-10. Use **Effects** tab to adjust per-track **Chan**, Mute, Solo, Volume, and Reverb.
+8. Use **Export PDF...** on the Score tab to write a full-song rendered score PDF.
+   - export uses current staff selections/clefs/chord labels
+   - live chord marker overlays are excluded from static export
+9. Use **Start** tab to select a MIDI output device.
+10. Use **Score** tab **Start/Stop**, **Continue**, and **Bar** for playback transport.
+11. Use **Effects** tab to adjust per-track **Chan**, Mute, Solo, Volume, and Reverb.
     - Use **Chan** changes if you need to reorganize channels in order to play along with the score and MIDI file while playing an instrument that shares the selected MIDI module.
 
 ## Notes and known limitations
@@ -150,6 +159,7 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 - Playback drives visual sync and optional MIDI output from one shared timeline.
 - Output is intentionally limited to a single GM-oriented MIDI destination.
 - Profile save/load is the supported way to keep or revert edits; the app does not rewrite source MIDI files.
+- PDF export is rendered page output (JPEG-backed pages in PDF), not vector engraving.
 - Track mix controls apply per source MIDI track:
   - **Chan** remaps outgoing playback to the selected MIDI channel (1..16)
   - volume scales note-on velocity and CC7/CC11

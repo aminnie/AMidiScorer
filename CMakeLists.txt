@@ -87,6 +87,7 @@ target_sources(MidiScorer
         src/app/MainComponent.h
         src/app/PlayerTabComponent.h
         src/app/PresetFileStore.h
+        src/app/ScorePdfExporter.h
         src/app/ScoreRebuildService.h
         src/app/TracksTabComponent.h
         src/app/TransportCoordinator.h
@@ -96,6 +97,7 @@ target_sources(MidiScorer
         src/notation/Quantizer.h
         src/notation/ScoreModel.h
         src/notation/ScoreRenderer.h
+        src/notation/SimplePdfWriter.h
         src/harmony/ChordDetector.h
         src/playback/IPlaybackPositionSource.h
         src/playback/PlaybackClock.h
@@ -148,6 +150,10 @@ target_sources(MidiScorerTests
         tests/test_main.cpp
         src/midi/TempoMap.h
         src/notation/Quantizer.h
+        src/notation/ScoreModel.h
+        src/notation/ScoreRenderer.h
+        src/notation/SimplePdfWriter.h
+        src/app/ScorePdfExporter.h
         src/harmony/ChordDetector.h
         src/playback/TrackMixState.h
         src/playback/TrackMixProcessor.h
@@ -170,6 +176,8 @@ target_link_libraries(MidiScorerTests
     PRIVATE
         juce::juce_audio_basics
         juce::juce_core
+        juce::juce_graphics
+        juce::juce_gui_basics
 )
 
 add_test(NAME MidiScorerTests COMMAND MidiScorerTests)
