@@ -54,7 +54,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Per-song score overrides (stored in `Documents/MidiScorer/ui_preset.json`):
   - transpose per song under `transposeOverridesBySong`
   - key override per song under `keyOverridesBySong`
-  - tempo override per song under `tempoOverridesBySong`
+  - tempo override per song under `tempoOverridesBySong` (scales playback uniformly against the file's opening tempo; later tempo changes keep their relative ratios)
   - staff/chord-track/accidental/alias selections and other score UI state per song
 - Non-destructive workflow:
   - loaded MIDI files are treated as source material and are not rewritten by the app

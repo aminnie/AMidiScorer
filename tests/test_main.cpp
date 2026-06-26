@@ -6,8 +6,10 @@
 #include "../src/notation/ScoreModel.h"
 #include "../src/harmony/ChordDetector.h"
 #include "../src/playback/MidiFilePlaybackEngineAdapter.h"
+#include "../src/playback/PlaybackController.h"
 #include "../src/playback/TrackMixProcessor.h"
 #include "../src/playback/TrackMixMidiSeed.h"
+#include "TestFixturePaths.h"
 #include <iostream>
 
 namespace
@@ -192,6 +194,66 @@ void testTrackNoteExtractorFlushesOrphans()
         }
     }
     expectTrue(orphanFlushed, "Orphan note ends at final track tick");
+}
+
+void testTrackNoteExtractorTreatsZeroVelocityNoteOnAsNoteOff()
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 960.0);
+
+    juce::MidiMessageSequence seq;
+    auto on = juce::MidiMessage::noteOn(1, 60, (juce::uint8) 100);
+    on.setTimeStamp(0.0);
+    seq.addEvent(on);
+
+    auto offViaZeroVelocity = juce::MidiMessage::noteOn(1, 60, (juce::uint8) 0);
+    offViaZeroVelocity.setTimeStamp(480.0);
+    seq.addEvent(offViaZeroVelocity);
+
+    const auto notes = TrackNoteExtractor::extract(seq, map);
+    expectTrue(notes.size() == 1, "Velocity-0 note-on closes the active note instead of opening another");
+    if (notes.empty())
+        return;
+
+    expectTrue(notes.front().noteNumber == 60, "Closed note keeps expected pitch");
+    expectTrue(std::abs(notes.front().endTick - 480.0) < 1.0e-6, "Velocity-0 note-on ends note at event tick");
+}
+
+void testTempoMapDetectsMultipleTempos()
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 }, { 960.0, 60.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 3840.0);
+
+    expectTrue(map.hasMultipleTempoEvents(), "Tempo map reports multiple distinct tempo events");
+}
+
+void testPlaybackControllerTempoOverrideScalesMultiTempoTimeline()
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 }, { 960.0, 60.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 3840.0);
+
+    const double totalDurationSec = map.tickToSeconds(3840.0);
+    PlaybackController controller;
+    controller.setTempoMap(&map, totalDurationSec);
+    controller.setTempoOverrideBpm(240.0, 120.0);
+    expectTrue(std::abs(controller.getTempoScale() - 2.0) < 1.0e-6,
+               "Tempo override scales relative to opening tempo");
+
+    const double tempoChangeSec = map.tickToSeconds(960.0);
+    controller.seekToSecond(tempoChangeSec);
+    expectTrue(std::abs(controller.getElapsedSeconds() - tempoChangeSec) < 1.0e-6,
+               "Seek preserves song-time position at tempo change boundary");
+
+    const int barAtChange = controller.getCurrentBar();
+    controller.seekToSecond(map.tickToSeconds(1920.0));
+    expectTrue(controller.getCurrentBar() >= barAtChange,
+               "Later song-time positions remain ordered across tempo changes under override");
 }
 
 void testScoreModelSplitsCrossBarNotes()
@@ -421,40 +483,112 @@ void testTrackMixMidiSeed()
     expectTrue(state.getChannel(0) == 8, "Saved preset channel remains after manual set");
 }
 
-void testCheckedInFixturesLoad()
+void testTempoTimeSigFixtureBehavior()
 {
-    auto fixturesDir = juce::File::getCurrentWorkingDirectory().getChildFile("../tests/fixtures");
-    if (!fixturesDir.isDirectory())
-    {
-        const juce::File testFilePath(__FILE__);
-        fixturesDir = testFilePath.getParentDirectory().getChildFile("fixtures");
-    }
-    const auto fixtureA = fixturesDir.getChildFile("tempo_time_sig.mid");
-    const auto fixtureB = fixturesDir.getChildFile("ties_syncopation.mid");
-
-    expectTrue(fixtureA.existsAsFile(), "Fixture tempo_time_sig.mid is checked in");
-    expectTrue(fixtureB.existsAsFile(), "Fixture ties_syncopation.mid is checked in");
+    const auto fixture = getTestFixtureFile("tempo_time_sig.mid");
+    expectTrue(fixture.existsAsFile(), "Fixture tempo_time_sig.mid is checked in");
 
     MidiProjectLoader loader;
+    MidiProjectData project;
     juce::String error;
-    MidiProjectData projectA;
-    MidiProjectData projectB;
+    const bool loaded = loader.load(fixture, project, error);
+    expectTrue(loaded, "Loader can parse tempo_time_sig fixture");
+    if (!loaded)
+    {
+        juce::Logger::writeToLog("Fixture load error: " + error);
+        return;
+    }
 
-    const bool loadA = loader.load(fixtureA, projectA, error);
-    expectTrue(loadA, "Loader can parse tempo_time_sig fixture");
-    if (!loadA)
-        juce::Logger::writeToLog("Fixture load error A: " + error);
+    const auto& signatures = project.tempoMap.getTimeSignatureEvents();
+    expectTrue(signatures.size() >= 2, "tempo_time_sig fixture includes time-signature changes");
+    expectTrue(signatures.front().numerator == 4 && signatures.front().denominator == 4,
+               "tempo_time_sig fixture opens in 4/4");
 
-    error.clear();
-    const bool loadB = loader.load(fixtureB, projectB, error);
-    expectTrue(loadB, "Loader can parse ties_syncopation fixture");
-    if (!loadB)
-        juce::Logger::writeToLog("Fixture load error B: " + error);
+    bool hasThreeFour = false;
+    for (const auto& signature : signatures)
+    {
+        if (signature.numerator == 3 && signature.denominator == 4)
+            hasThreeFour = true;
+    }
+    expectTrue(hasThreeFour, "tempo_time_sig fixture includes 3/4 time signature");
 
-    if (loadA)
-        expectTrue(projectA.maxBar >= 1, "tempo_time_sig fixture yields valid bar range");
-    if (loadB)
-        expectTrue(!projectB.tracks.empty(), "ties_syncopation fixture yields at least one track");
+    const auto& tempos = project.tempoMap.getTempoEvents();
+    expectTrue(tempos.size() >= 2, "tempo_time_sig fixture includes tempo changes");
+    expectTrue(std::abs(tempos.front().bpm - 120.0) < 0.1, "tempo_time_sig fixture opens at 120 BPM");
+
+    bool hasNinetyBpm = false;
+    for (const auto& tempo : tempos)
+    {
+        if (std::abs(tempo.bpm - 90.0) < 0.1)
+            hasNinetyBpm = true;
+    }
+    expectTrue(hasNinetyBpm, "tempo_time_sig fixture includes 90 BPM tempo change");
+
+    expectTrue(project.maxBar >= 4, "tempo_time_sig fixture spans at least four bars");
+    expectTrue(std::abs(project.tempoMap.barToQuarterDownbeat(3) - 8.0) < 0.01,
+               "tempo_time_sig fixture maps bar 3 downbeat to quarter 8 before 3/4 change");
+}
+
+void testTiesSyncopationFixtureBehavior()
+{
+    const auto fixture = getTestFixtureFile("ties_syncopation.mid");
+    expectTrue(fixture.existsAsFile(), "Fixture ties_syncopation.mid is checked in");
+
+    MidiProjectLoader loader;
+    MidiProjectData project;
+    juce::String error;
+    const bool loaded = loader.load(fixture, project, error);
+    expectTrue(loaded, "Loader can parse ties_syncopation fixture");
+    if (!loaded)
+    {
+        juce::Logger::writeToLog("Fixture load error: " + error);
+        return;
+    }
+
+    expectTrue(!project.tracks.empty(), "ties_syncopation fixture yields at least one track");
+    expectTrue(project.maxBar >= 2, "ties_syncopation fixture spans multiple bars");
+
+    bool foundCrossBarSustain = false;
+    for (const auto& track : project.tracks)
+    {
+        for (const auto& note : track.notes)
+        {
+            const int startBar = project.tempoMap.secondsToBar(note.startSec);
+            const int endBar = project.tempoMap.secondsToBar(juce::jmax(note.startSec, note.endSec - 1.0e-6));
+            if (endBar > startBar)
+                foundCrossBarSustain = true;
+        }
+    }
+    expectTrue(foundCrossBarSustain, "ties_syncopation fixture contains a note sustained across a bar line");
+
+    const auto& track = project.tracks.front();
+    expectTrue(!track.notes.empty(), "ties_syncopation primary track contains extracted notes");
+
+    const auto quantized = Quantizer::quantizeTrack(track.notes, project.tempoMap);
+    ScoreModel model;
+    model.build(project.tempoMap, quantized, {}, project.maxBar);
+
+    bool foundTieIntoNextBar = false;
+    for (int bar = model.getFirstBar(); bar <= model.getLastBar(); ++bar)
+    {
+        const auto bars = model.getWindowBars(bar, 0, 0);
+        for (const auto& barData : bars)
+        {
+            for (const auto& note : barData.notes)
+            {
+                if (!note.isRest && note.tieIntoNextBar)
+                    foundTieIntoNextBar = true;
+            }
+        }
+    }
+    expectTrue(foundTieIntoNextBar, "ties_syncopation fixture produces a score tie into the next bar");
+}
+
+void testCheckedInFixturesLoad()
+{
+    expectTrue(getTestFixturesDirectory().isDirectory(), "Test fixtures directory resolves");
+    testTempoTimeSigFixtureBehavior();
+    testTiesSyncopationFixtureBehavior();
 }
 }
 
@@ -466,6 +600,9 @@ int main()
     testMidiLoaderRejectsType0();
     testMidiLoaderRejectsSmpte();
     testTrackNoteExtractorFlushesOrphans();
+    testTrackNoteExtractorTreatsZeroVelocityNoteOnAsNoteOff();
+    testTempoMapDetectsMultipleTempos();
+    testPlaybackControllerTempoOverrideScalesMultiTempoTimeline();
     testScoreModelSplitsCrossBarNotes();
     testChordDetectorResetsAcrossSilence();
     testScoreModelNormalizesChordQuarterInBar();

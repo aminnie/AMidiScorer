@@ -48,7 +48,7 @@ public:
         staff1ClefSelector.addItem("Bass", 2);
         staff1ClefSelector.addItem("Drum", 3);
         staff1ClefSelector.setSelectedId(1, juce::dontSendNotification);
-        staff1ClefSelector.onChange = [this] { rebuildAllStaffs(); };
+        staff1ClefSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
 
         addAndMakeVisible(staff2TrackLabel);
         staff2TrackLabel.setText("Staff 2", juce::dontSendNotification);
@@ -60,7 +60,7 @@ public:
         staff2ClefSelector.addItem("Bass", 2);
         staff2ClefSelector.addItem("Drum", 3);
         staff2ClefSelector.setSelectedId(1, juce::dontSendNotification);
-        staff2ClefSelector.onChange = [this] { rebuildAllStaffs(); };
+        staff2ClefSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
 
         addAndMakeVisible(staff3TrackLabel);
         staff3TrackLabel.setText("Staff 3", juce::dontSendNotification);
@@ -72,7 +72,7 @@ public:
         staff3ClefSelector.addItem("Bass", 2);
         staff3ClefSelector.addItem("Drum", 3);
         staff3ClefSelector.setSelectedId(1, juce::dontSendNotification);
-        staff3ClefSelector.onChange = [this] { rebuildAllStaffs(); };
+        staff3ClefSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
 
         addAndMakeVisible(transportToggleButton);
         transportToggleButton.setButtonText("Start");
@@ -100,7 +100,11 @@ public:
         addAndMakeVisible(scoreColorToggle);
         scoreColorToggle.setButtonText("Light Score");
         scoreColorToggle.setToggleState(true, juce::dontSendNotification);
-        scoreColorToggle.onClick = [this] { applyScoreColorScheme(); };
+        scoreColorToggle.onClick = [this]
+        {
+            applyScoreColorScheme();
+            refreshSavePresetButtonDirtyStyle();
+        };
         scoreColorToggle.setTooltip("Toggle score display between white-on-black and black-on-white.");
 
         addAndMakeVisible(globalTransposeLabel);
@@ -563,22 +567,26 @@ private:
     struct ScoreSongSettingsSnapshot
     {
         std::array<int, 3> staffTrackSelection = { 0, 0, 0 };
+        std::array<int, 3> staffClefSelection = { 1, 1, 1 };
         juce::String chordTrackSelectionCsv;
         int accidentalSelection = 1;
         int aliasSelection = 1;
         int transposeSemitones = 0;
         juce::String keyOverrideText;
         juce::String tempoOverrideText;
+        bool scoreLightMode = true;
 
         bool operator==(const ScoreSongSettingsSnapshot& other) const
         {
             return staffTrackSelection == other.staffTrackSelection
+                && staffClefSelection == other.staffClefSelection
                 && chordTrackSelectionCsv == other.chordTrackSelectionCsv
                 && accidentalSelection == other.accidentalSelection
                 && aliasSelection == other.aliasSelection
                 && transposeSemitones == other.transposeSemitones
                 && keyOverrideText == other.keyOverrideText
-                && tempoOverrideText == other.tempoOverrideText;
+                && tempoOverrideText == other.tempoOverrideText
+                && scoreLightMode == other.scoreLightMode;
         }
     };
 
@@ -819,12 +827,16 @@ private:
         snapshot.staffTrackSelection = { staff1TrackSelector.getSelectedItemIndex(),
                                          staff2TrackSelector.getSelectedItemIndex(),
                                          staff3TrackSelector.getSelectedItemIndex() };
+        snapshot.staffClefSelection = { staff1ClefSelector.getSelectedId(),
+                                        staff2ClefSelector.getSelectedId(),
+                                        staff3ClefSelector.getSelectedId() };
         snapshot.chordTrackSelectionCsv = buildChordTrackSelectionCsv();
         snapshot.accidentalSelection = accidentalSelector.getSelectedId();
         snapshot.aliasSelection = aliasSelector.getSelectedId();
         snapshot.transposeSemitones = getClampedTranspose(globalTransposeInput);
         snapshot.keyOverrideText = keyOverride.has_value() ? keyOverride->displayText : juce::String();
         snapshot.tempoOverrideText = tempoOverrideInput.getText().trim();
+        snapshot.scoreLightMode = scoreColorToggle.getToggleState();
         return snapshot;
     }
 
@@ -900,8 +912,26 @@ private:
     {
         if (playbackController.isPlaying())
             midiOutputDevice.sendAllNotesOff();
-        saveUiPreset(false);
+        scheduleDebouncedTrackMixPresetSave();
         refreshStatusMessage();
+    }
+
+    void scheduleDebouncedTrackMixPresetSave()
+    {
+        ++trackMixPresetSaveGeneration;
+        const int generation = trackMixPresetSaveGeneration;
+        juce::Component::SafePointer<MainComponent> safeThis(this);
+        juce::Timer::callAfterDelay(trackMixPresetAutosaveDelayMs, [safeThis, generation]()
+        {
+            if (safeThis == nullptr || generation != safeThis->trackMixPresetSaveGeneration)
+                return;
+            safeThis->saveUiPreset(false);
+        });
+    }
+
+    void invalidateDebouncedTrackMixPresetSave()
+    {
+        ++trackMixPresetSaveGeneration;
     }
 
     int getChordTracksLayoutHeight(int availableWidth) const
@@ -1232,6 +1262,7 @@ private:
         if (!file.existsAsFile())
             return;
 
+        invalidateDebouncedTrackMixPresetSave();
         lastMidiDirectory = file.getParentDirectory();
         saveLastMidiDirectoryToPreset();
         pushRecentMidiFile(file);
@@ -1683,6 +1714,7 @@ private:
 
     bool loadUiPreset(bool silent = false)
     {
+        invalidateDebouncedTrackMixPresetSave();
         const auto file = PresetFileStore::getPresetFilePath();
         if (!file.existsAsFile())
         {
@@ -1881,6 +1913,26 @@ private:
 
     std::vector<MidiNoteEvent> collectChordAnalysisNotes(int selectedTrackIndex)
     {
+        return collectChordAnalysisNotesInternal(true, selectedTrackIndex);
+    }
+
+    std::vector<MidiNoteEvent> collectSharedChordAnalysisNotes() const
+    {
+        return collectChordAnalysisNotesInternal(false, -1);
+    }
+
+    bool hasChordTrackSelection() const
+    {
+        for (auto* button : chordTrackButtons)
+        {
+            if (button->getToggleState())
+                return true;
+        }
+        return false;
+    }
+
+    std::vector<MidiNoteEvent> collectChordAnalysisNotesInternal(bool allowStaffFallback, int selectedTrackIndex) const
+    {
         std::vector<MidiNoteEvent> mergedNotes;
         juce::Array<int> selectedIndices;
         for (int i = 0; i < chordTrackButtons.size(); ++i)
@@ -1889,8 +1941,12 @@ private:
                 selectedIndices.add(chordTrackSourceIndices[i]);
         }
 
-        if (selectedIndices.isEmpty() && selectedTrackIndex >= 0 && selectedTrackIndex < static_cast<int>(project.tracks.size()))
+        if (selectedIndices.isEmpty())
+        {
+            if (!allowStaffFallback || selectedTrackIndex < 0 || selectedTrackIndex >= static_cast<int>(project.tracks.size()))
+                return mergedNotes;
             selectedIndices.add(selectedTrackIndex);
+        }
 
         size_t reserveCount = 0;
         for (int idx : selectedIndices)
@@ -1903,7 +1959,7 @@ private:
             mergedNotes.insert(mergedNotes.end(), notes.begin(), notes.end());
         }
 
-        const int transposeSemitones = getEffectiveTransposeSemitones();
+        const int transposeSemitones = getClampedTranspose(globalTransposeInput) + getKeyOverrideTransposeSemitones();
         if (transposeSemitones != 0)
         {
             for (auto& note : mergedNotes)
@@ -2105,6 +2161,8 @@ private:
             return getEffectiveTransposeSemitones(true);
         };
         ctx.collectChordAnalysisNotes = [this](int trackIndex) { return collectChordAnalysisNotes(trackIndex); };
+        ctx.collectSharedChordAnalysisNotes = [this]() { return collectSharedChordAnalysisNotes(); };
+        ctx.hasChordTrackSelection = [this]() { return hasChordTrackSelection(); };
         ctx.namingOptions = [this]() { return getChordNamingOptions(); };
         ctx.resetLiveChordState = [this]() { resetLiveChordState(); };
         ctx.setStatusMessage = [this](const juce::String& message) { setStatusMessage(message); };
@@ -2197,7 +2255,10 @@ private:
                       "Tempo Override Help",
                       "Enter a BPM value from 10 to 400 to override playback tempo.\n\n"
                       "Leave blank to use the tempo map from the MIDI file.\n"
-                      "Per-song tempo overrides are saved in your preset profile.");
+                      "Per-song tempo overrides are saved in your preset profile.\n\n"
+                      "Override BPM is measured against the file's opening tempo and scales playback "
+                      "uniformly. Songs with later tempo changes keep their internal tempo ratios; "
+                      "notation and bar positions stay tied to the source map.");
     }
 
     void showAccidentalHelpModal()
@@ -2266,9 +2327,20 @@ private:
             return "Tempo: n/a";
 
         const double detectedBpm = tempos.front().bpm;
-        juce::String tempoText = formatTempoBpm(detectedBpm);
+        juce::String detectedText = formatTempoBpm(detectedBpm);
+        if (project.tempoMap.hasMultipleTempoEvents())
+        {
+            detectedText = formatTempoBpm(detectedBpm) + " (multi-tempo)";
+        }
+
+        juce::String tempoText = detectedText;
         if (tempoOverrideBpm.has_value())
-            tempoText = formatTempoBpm(tempoOverrideBpm.value()) + " (detected " + formatTempoBpm(detectedBpm) + ")";
+        {
+            tempoText = formatTempoBpm(tempoOverrideBpm.value()) + " (opening " + formatTempoBpm(detectedBpm);
+            if (project.tempoMap.hasMultipleTempoEvents())
+                tempoText += ", multi-tempo map";
+            tempoText += ")";
+        }
         return "Tempo: " + tempoText;
     }
 
@@ -2379,4 +2451,6 @@ private:
     std::optional<ParsedKey> keyOverride;
     std::array<std::vector<MidiNoteEvent>, 3> liveChordNotesByStaff;
     std::array<LiveChordState, 3> liveChordStates;
+    static constexpr int trackMixPresetAutosaveDelayMs = 400;
+    int trackMixPresetSaveGeneration = 0;
 };

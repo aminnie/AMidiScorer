@@ -9,7 +9,7 @@
   - `testTempoMap()`
   - `testMidiLoaderRejectsSmpte()`
   - `testWindowClampBehaviorForScoreWindow()`
-  - `testCheckedInFixturesLoad()` via `tempo_time_sig.mid`
+  - `testTempoTimeSigFixtureBehavior()` via `tempo_time_sig.mid`
 
 ## 2) syncopated-note-durations
 - Notes starting off-beat (16th offsets)
@@ -33,4 +33,4 @@
 - Related tests:
   - `testTrackNoteExtractorFlushesOrphans()`
   - `testScoreModelSplitsCrossBarNotes()`
-  - `testCheckedInFixturesLoad()` via `ties_syncopation.mid`
+  - `testTiesSyncopationFixtureBehavior()` via `ties_syncopation.mid`

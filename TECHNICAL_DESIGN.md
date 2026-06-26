@@ -70,6 +70,8 @@ The player path is intentionally loosely coupled:
 - `MainComponent::timerCallback()` bridges the two by passing `getElapsedSeconds()` into the adapter and routing emitted messages through `MidiOutputDevice`.
 - `PlayerTabComponent` exposes MIDI output selection; playback transport lives on the Score tab.
 
+**Tempo override policy (multi-tempo files):** override BPM is compared to the file's opening tempo and applies a uniform playback-rate scale via `PlaybackController::setTempoOverrideBpm()`. Internal tempo-change ratios in the source map are preserved; bar positions, score timing, and MIDI event scheduling remain tied to the source tempo map's song-time axis.
+
 This keeps the scorer and player separable for future reuse in a tabbed host such as AMidiOrganOrg.
 
 ## 2.2) Per-track playback mix

@@ -180,50 +180,50 @@ This checklist tracks code-review findings and implementation work items.
   - Files: `src/app/MainComponent.h` and extracted helpers under `src/app/`
   - Acceptance:
     - Orchestration remains behavior-compatible while reducing single-header coupling.
-- [ ] **P1 / M** Remove duplicate heavy chord detection during rebuild by computing static chord annotations once per rebuild and reusing across staff models.
+- [x] **P1 / M** Remove duplicate heavy chord detection during rebuild by computing static chord annotations once per rebuild and reusing across staff models.
   - Files: `src/app/MainComponent.h`, `src/harmony/ChordDetector.h`
   - Acceptance:
     - Full staff rebuild avoids repeated whole-song chord scans.
-- [ ] **P1 / S** Handle note-on velocity 0 as note-off in extractor with regression test.
+- [x] **P1 / S** Handle note-on velocity 0 as note-off in extractor with regression test.
   - Files: `src/midi/TrackNoteExtractor.h`, `tests/test_main.cpp`
   - Acceptance:
     - Velocity-0 note-on closes active notes as expected.
-- [ ] **P1 / S** Debounce preset autosave on mix slider edits to avoid UI-thread rewrite thrash.
+- [x] **P1 / S** Debounce preset autosave on mix slider edits to avoid UI-thread rewrite thrash.
   - Files: `src/app/MainComponent.h`
   - Acceptance:
     - Rapid slider changes batch into fewer preset writes.
-- [ ] **P1 / M** Define and implement tempo-override behavior for multi-tempo songs.
+- [x] **P1 / M** Define and implement tempo-override behavior for multi-tempo songs.
   - Files: `src/playback/PlaybackController.h`, `src/app/MainComponent.h`, tests as needed
   - Acceptance:
     - Behavior is deterministic and documented for files with tempo changes.
 
 ## Priority 10 - Test/CI hardening and product UX enhancements
 
-- [ ] **P1 / S** Pin JUCE revision in CI for stability.
+- [x] **P2 / S** Pin JUCE revision in CI for stability.
   - Files: `.github/workflows/ci.yml`
   - Acceptance:
     - CI uses a fixed JUCE tag/commit instead of floating default branch.
-- [ ] **P1 / M** Convert fixture load-smoke checks into behavioral assertions for tempo/time-signature and ties fixtures.
+- [x] **P2 / M** Convert fixture load-smoke checks into behavioral assertions for tempo/time-signature and ties fixtures.
   - Files: `tests/test_main.cpp`, `tests/fixtures/fixture-specs.md`
   - Acceptance:
     - Fixture tests validate expected musical/timing behavior, not only parse success.
-- [ ] **P1 / S** Add explicit CTest working directory and deterministic fixture path strategy.
+- [x] **P2 / S** Add explicit CTest working directory and deterministic fixture path strategy.
   - Files: `CMakeLists.txt`, `tests/test_main.cpp`
   - Acceptance:
     - Fixture tests run reliably regardless of invocation directory.
-- [ ] **P1 / S** Fix dirty-state coverage gaps for clef and score color settings.
+- [x] **P2 / S** Fix dirty-state coverage gaps for clef and score color settings.
   - Files: `src/app/MainComponent.h`
   - Acceptance:
     - Clef and score color edits correctly trigger Save Preset dirty style.
-- [ ] **P2 / M** Add startup resume workflow (optional reopen last MIDI/recent path).
+- [ ] **P3 / M** Add startup resume workflow (optional reopen last MIDI/recent path).
   - Files: `src/app/MainComponent.h`, `Main.cpp`
   - Acceptance:
     - User can opt in to reopening recent/last MIDI on startup.
-- [ ] **P2 / M** Add missing checked-in fixtures for syncopation and altered-chord scenarios plus assertions.
+- [ ] **P3 / M** Add missing checked-in fixtures for syncopation and altered-chord scenarios plus assertions.
   - Files: `tests/fixtures/`, `tests/fixtures/fixture-specs.md`, `tests/test_main.cpp`
   - Acceptance:
     - Fixture specs for syncopation/altered chords are represented by checked-in files and tests.
-- [ ] **P2 / L** Add score export options (PNG/PDF only) and/or rendering regression tests.
+- [ ] **P4 / L** Add score export options (PNG/PDF only) and/or rendering regression tests.
   - Files: `src/notation/ScoreRenderer.h`, `src/app/MainComponent.h`, tests/docs as needed
   - Acceptance:
     - A documented non-MIDI export path (PNG/PDF) or regression-testing path improves score-output reliability without rewriting source MIDI files.

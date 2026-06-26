@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <functional>
+#include <optional>
 #include <vector>
 #include "../harmony/ChordDetector.h"
 #include "../midi/MidiProjectLoader.h"
@@ -31,6 +32,8 @@ public:
         std::function<void(int staffIndex, ScoreModel&, ScoreRenderer&)> clearStaff;
         std::function<int(int trackIndex)> effectiveTransposeForTrack;
         std::function<std::vector<MidiNoteEvent>(int trackIndex)> collectChordAnalysisNotes;
+        std::function<std::vector<MidiNoteEvent>()> collectSharedChordAnalysisNotes;
+        std::function<bool()> hasChordTrackSelection;
         std::function<ChordDetector::NamingOptions()> namingOptions;
         std::function<void()> resetLiveChordState;
         std::function<void(const juce::String&)> setStatusMessage;
@@ -56,7 +59,9 @@ public:
         return ScoreRenderer::ClefType::treble;
     }
 
-    static void rebuildStaff(const StaffLane& lane, const Context& ctx)
+    static void rebuildStaff(const StaffLane& lane,
+                             const Context& ctx,
+                             const std::optional<std::vector<ChordAnnotation>>& sharedChordAnnotations = std::nullopt)
     {
         if (ctx.project == nullptr || lane.trackSelector == nullptr || lane.clefSelector == nullptr
             || lane.model == nullptr || lane.renderer == nullptr || ctx.liveChordNotesByStaff == nullptr)
@@ -87,7 +92,11 @@ public:
         (*ctx.liveChordNotesByStaff)[lane.staffIndex] = chordAnalysisNotes;
         const auto namingOptions = ctx.namingOptions ? ctx.namingOptions() : ChordDetector::NamingOptions();
 
-        auto chords = ChordDetector::detect(chordAnalysisNotes, ctx.project->tempoMap, ctx.project->maxBar, namingOptions);
+        std::vector<ChordAnnotation> chords;
+        if (sharedChordAnnotations.has_value())
+            chords = sharedChordAnnotations.value();
+        else
+            chords = ChordDetector::detect(chordAnalysisNotes, ctx.project->tempoMap, ctx.project->maxBar, namingOptions);
         lane.model->build(ctx.project->tempoMap, quantized, chords, ctx.project->maxBar);
         lane.renderer->setStaffLabel(track.name);
         lane.renderer->setClefType(clefType);
@@ -121,8 +130,21 @@ public:
                 lane.renderer->setKeySignature(hasKeySignature, keySharpsOrFlats);
         }
 
+        std::optional<std::vector<ChordAnnotation>> sharedChordAnnotations;
+        const bool useSharedChords = ctx.hasChordTrackSelection && ctx.hasChordTrackSelection()
+            && ctx.collectSharedChordAnalysisNotes;
+        if (useSharedChords)
+        {
+            const auto sharedNotes = ctx.collectSharedChordAnalysisNotes();
+            const auto namingOptions = ctx.namingOptions ? ctx.namingOptions() : ChordDetector::NamingOptions();
+            sharedChordAnnotations = ChordDetector::detect(sharedNotes,
+                                                           ctx.project->tempoMap,
+                                                           ctx.project->maxBar,
+                                                           namingOptions);
+        }
+
         for (const auto& lane : lanes)
-            rebuildStaff(lane, ctx);
+            rebuildStaff(lane, ctx, sharedChordAnnotations);
 
         if (ctx.resetLiveChordState)
             ctx.resetLiveChordState();

@@ -9,6 +9,9 @@
 class PlaybackController : public IPlaybackPositionSource
 {
 public:
+    // Tempo override applies a uniform playback-rate scale relative to the file's
+    // initial tempo. Multi-tempo maps keep their internal tempo-change ratios;
+    // bar positions and score timing stay tied to the source tempo map.
     void setTempoMap(const TempoMap* mapPtr, double durationSec)
     {
         tempoMap = mapPtr;
@@ -29,6 +32,11 @@ public:
         }
 
         tempoScale = juce::jmax(1.0e-4, overrideBpmValue.value() / normalizedReference.value());
+    }
+
+    double getTempoScale() const
+    {
+        return tempoScale;
     }
 
     void playFromStart()

@@ -163,6 +163,7 @@ target_compile_definitions(MidiScorerTests
     PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
+        "MIDISCORER_TEST_FIXTURES_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures\""
 )
 
 target_link_libraries(MidiScorerTests
@@ -172,3 +173,6 @@ target_link_libraries(MidiScorerTests
 )
 
 add_test(NAME MidiScorerTests COMMAND MidiScorerTests)
+set_tests_properties(MidiScorerTests PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+)

@@ -42,13 +42,32 @@ public:
 
             if (msg.isNoteOn())
             {
-                MidiNoteEvent ev;
-                ev.channel = msg.getChannel();
-                ev.noteNumber = msg.getNoteNumber();
-                ev.velocity = msg.getVelocity();
-                ev.startTick = tick;
-                ev.startSec = tempoMap.tickToSeconds(tick);
-                active.emplace(std::make_pair(ev.channel, ev.noteNumber), ev);
+                if (msg.getVelocity() == 0)
+                {
+                    const auto key = std::make_pair(msg.getChannel(), msg.getNoteNumber());
+                    auto range = active.equal_range(key);
+                    if (range.first == range.second)
+                        continue;
+
+                    auto it = range.first;
+                    MidiNoteEvent ev = it->second;
+                    active.erase(it);
+
+                    ev.endTick = tick;
+                    ev.endSec = tempoMap.tickToSeconds(tick);
+                    if (ev.endTick >= ev.startTick)
+                        notes.push_back(ev);
+                }
+                else
+                {
+                    MidiNoteEvent ev;
+                    ev.channel = msg.getChannel();
+                    ev.noteNumber = msg.getNoteNumber();
+                    ev.velocity = msg.getVelocity();
+                    ev.startTick = tick;
+                    ev.startSec = tempoMap.tickToSeconds(tick);
+                    active.emplace(std::make_pair(ev.channel, ev.noteNumber), ev);
+                }
             }
             else if (msg.isNoteOff())
             {

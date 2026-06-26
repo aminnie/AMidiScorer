@@ -34,6 +34,8 @@ public:
                                                int maxBar,
                                                NamingOptions options = {})
     {
+        // ScoreRebuildService caches one detect() result per rebuild when chord-track
+        // selection is active, so this scan is not repeated for every staff lane.
         std::vector<ChordAnnotation> out;
         if (notes.empty())
             return out;

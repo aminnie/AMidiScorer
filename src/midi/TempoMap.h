@@ -223,6 +223,20 @@ public:
     const std::vector<TempoEvent>& getTempoEvents() const { return tempoEvents; }
     const std::vector<TimeSignatureEvent>& getTimeSignatureEvents() const { return timeSignatureEvents; }
 
+    bool hasMultipleTempoEvents() const
+    {
+        if (tempoEvents.size() <= 1)
+            return false;
+
+        const double referenceBpm = tempoEvents.front().bpm;
+        for (size_t i = 1; i < tempoEvents.size(); ++i)
+        {
+            if (std::abs(tempoEvents[i].bpm - referenceBpm) > 1.0e-6)
+                return true;
+        }
+        return false;
+    }
+
 private:
     double ppq = 960.0;
     double totalTicks = 0.0;
