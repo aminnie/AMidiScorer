@@ -13,13 +13,6 @@ public:
     explicit TracksTabComponent(MainComponent& scorePageRef)
         : scorePage(scorePageRef)
     {
-        // #region agent log
-        appendDebugLog("post-fix-solo-crash-1",
-                       "H7",
-                       "src/app/TracksTabComponent.h:ctor",
-                       "TracksTabComponent initialized with deferred-refresh instrumentation",
-                       juce::var());
-        // #endregion
         addAndMakeVisible(viewport);
         viewport.setViewedComponent(&content, false);
         viewport.setScrollBarsShown(true, false);
@@ -34,24 +27,6 @@ public:
     }
 
 private:
-    static void appendDebugLog(const juce::String& runId,
-                               const juce::String& hypothesisId,
-                               const juce::String& location,
-                               const juce::String& message,
-                               juce::var data)
-    {
-        auto payload = std::make_unique<juce::DynamicObject>();
-        payload->setProperty("sessionId", "e2bc95");
-        payload->setProperty("runId", runId);
-        payload->setProperty("hypothesisId", hypothesisId);
-        payload->setProperty("location", location);
-        payload->setProperty("message", message);
-        payload->setProperty("data", data);
-        payload->setProperty("timestamp", static_cast<juce::int64>(juce::Time::currentTimeMillis()));
-        juce::File("C:/Users/a_min/midiscorer/debug-e2bc95.log")
-            .appendText(juce::JSON::toString(juce::var(payload.release()), true) + "\n");
-    }
-
     struct TrackRow
     {
         int trackIndex = -1;
@@ -80,13 +55,6 @@ private:
     {
         if (refreshPending)
         {
-            // #region agent log
-            appendDebugLog("post-fix-solo-crash-1",
-                           "F1",
-                           "src/app/TracksTabComponent.h:timerCallback",
-                           "Processing deferred track-row refresh from callback",
-                           juce::var());
-            // #endregion
             refreshPending = false;
             trackSignature.clear();
             refreshTrackRows();
@@ -96,16 +64,6 @@ private:
         const auto newSignature = buildTrackSignature();
         if (newSignature != trackSignature)
         {
-            auto data = std::make_unique<juce::DynamicObject>();
-            data->setProperty("oldSignatureLen", trackSignature.length());
-            data->setProperty("newSignatureLen", newSignature.length());
-            // #region agent log
-            appendDebugLog("tracks-solo-crash-1",
-                           "H3",
-                           "src/app/TracksTabComponent.h:timerCallback",
-                           "Track signature changed; refreshing track rows from timer",
-                           juce::var(data.release()));
-            // #endregion
             trackSignature = newSignature;
             refreshTrackRows();
         }
@@ -128,17 +86,6 @@ private:
 
     void refreshTrackRows()
     {
-        auto startData = std::make_unique<juce::DynamicObject>();
-        startData->setProperty("existingRows", static_cast<int>(rows.size()));
-        startData->setProperty("projectTrackCount", scorePage.getTrackMixTrackCount());
-        // #region agent log
-        appendDebugLog("tracks-solo-crash-1",
-                       "H1",
-                       "src/app/TracksTabComponent.h:refreshTrackRows",
-                       "Entering refreshTrackRows",
-                       juce::var(startData.release()));
-        // #endregion
-
         rows.clear();
         content.removeAllChildren();
 
@@ -222,40 +169,8 @@ private:
             row->soloToggle->setToggleState(scorePage.isTrackSolo(i), juce::dontSendNotification);
             row->soloToggle->onClick = [this, idx = i, toggle = row->soloToggle.get()]
             {
-                auto clickData = std::make_unique<juce::DynamicObject>();
-                clickData->setProperty("trackIndex", idx);
-                clickData->setProperty("toggleState", toggle != nullptr ? toggle->getToggleState() : false);
-                clickData->setProperty("togglePtrNull", toggle == nullptr);
-                // #region agent log
-                appendDebugLog("tracks-solo-crash-1",
-                               "H2",
-                               "src/app/TracksTabComponent.h:soloToggle.onClick",
-                               "Solo toggle callback entered",
-                               juce::var(clickData.release()));
-                // #endregion
                 scorePage.setTrackSolo(idx, toggle->getToggleState());
-                // #region agent log
-                appendDebugLog("tracks-solo-crash-1",
-                               "H4",
-                               "src/app/TracksTabComponent.h:soloToggle.onClick",
-                               "Deferring refresh from solo callback",
-                               juce::var());
-                // #endregion
                 refreshPending = true;
-                // #region agent log
-                appendDebugLog("tracks-solo-crash-1",
-                               "H4",
-                               "src/app/TracksTabComponent.h:soloToggle.onClick",
-                               "Marked refreshPending in solo callback",
-                               juce::var());
-                // #endregion
-                // #region agent log
-                appendDebugLog("tracks-solo-crash-1",
-                               "H6",
-                               "src/app/TracksTabComponent.h:soloToggle.onClick",
-                               "Completed solo callback tail after deferred refresh setup",
-                               juce::var());
-                // #endregion
             };
             content.addAndMakeVisible(*row->soloToggle);
 
@@ -264,17 +179,6 @@ private:
 
         layoutRows();
         repaint();
-
-        auto endData = std::make_unique<juce::DynamicObject>();
-        endData->setProperty("rebuiltRows", static_cast<int>(rows.size()));
-        endData->setProperty("contentHeight", content.getHeight());
-        // #region agent log
-        appendDebugLog("tracks-solo-crash-1",
-                       "H1",
-                       "src/app/TracksTabComponent.h:refreshTrackRows",
-                       "Completed refreshTrackRows",
-                       juce::var(endData.release()));
-        // #endregion
     }
 
     void layoutRows()

@@ -8,7 +8,6 @@
 #include <optional>
 #include <vector>
 #include "../midi/MidiProjectLoader.h"
-#include "../midi/MidiMixExporter.h"
 #include "../notation/Quantizer.h"
 #include "../notation/ScoreModel.h"
 #include "../notation/ScoreRenderer.h"
@@ -35,10 +34,6 @@ public:
         loadButton.setColour(juce::TextButton::buttonOnColourId,
                              juce::Colour(0xff8aa3b6).interpolatedWith(juce::Colours::black, 0.10f));
         loadButton.onClick = [this] { loadMidiFile(); };
-
-        addAndMakeVisible(exportMidiButton);
-        exportMidiButton.setButtonText("Export MIDI");
-        exportMidiButton.onClick = [this] { exportMixedMidi(); };
 
         addAndMakeVisible(staff1TrackLabel);
         staff1TrackLabel.setText("Staff 1", juce::dontSendNotification);
@@ -79,10 +74,6 @@ public:
         addAndMakeVisible(transportToggleButton);
         transportToggleButton.setButtonText("Start");
         transportToggleButton.onClick = [this] { onTransportToggleClicked(); };
-
-        addAndMakeVisible(pauseButton);
-        pauseButton.setButtonText("Pause");
-        pauseButton.onClick = [this] { pausePlayback(); };
 
         addAndMakeVisible(accidentalSelector);
         accidentalSelector.addItem("Sharp names", 1);
@@ -151,6 +142,7 @@ public:
         addAndMakeVisible(loopStartInput);
         loopStartInput.setInputRestrictions(5, "0123456789");
         loopStartInput.setText("1", juce::dontSendNotification);
+        loopStartInput.setJustification(juce::Justification::centred);
         loopStartInput.onReturnKey = [this] { applyLoopBoundsFromInputs(); };
         loopStartInput.onFocusLost = [this] { applyLoopBoundsFromInputs(); };
 
@@ -160,6 +152,7 @@ public:
         addAndMakeVisible(loopEndInput);
         loopEndInput.setInputRestrictions(5, "0123456789");
         loopEndInput.setText("1", juce::dontSendNotification);
+        loopEndInput.setJustification(juce::Justification::centred);
         loopEndInput.onReturnKey = [this] { applyLoopBoundsFromInputs(); };
         loopEndInput.onFocusLost = [this] { applyLoopBoundsFromInputs(); };
 
@@ -268,9 +261,7 @@ public:
         auto row = area.removeFromTop(34);
 
         loadButton.setBounds(row.removeFromLeft(108).reduced(4, 0));
-        exportMidiButton.setBounds(row.removeFromLeft(96).reduced(4, 0));
         transportToggleButton.setBounds(row.removeFromLeft(92).reduced(4, 0));
-        pauseButton.setBounds(row.removeFromLeft(82).reduced(4, 0));
         continueButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
         continueBarLabel.setBounds(row.removeFromLeft(34));
         continueBarInput.setBounds(row.removeFromLeft(64).reduced(4, 0));
@@ -472,12 +463,18 @@ public:
         return midiOutputDevice.getSelectedName();
     }
 
+    juce::String getMidiOutputRestoreWarning() const
+    {
+        return midiOutputRestoreWarning;
+    }
+
     bool selectMidiOutputDevice(const juce::String& identifier, bool persistSelection, juce::String& error)
     {
         const bool opened = midiOutputDevice.openByIdentifier(identifier, error);
         if (!opened)
             return false;
 
+        midiOutputRestoreWarning.clear();
         if (persistSelection)
             saveSelectedMidiOutputToConfig();
         return true;
@@ -486,6 +483,7 @@ public:
     void clearMidiOutputDevice()
     {
         midiOutputDevice.close();
+        midiOutputRestoreWarning.clear();
         saveSelectedMidiOutputToConfig();
     }
 
@@ -1044,12 +1042,35 @@ private:
         return dir.getChildFile("midi_output.json");
     }
 
-    void saveSelectedMidiOutputToConfig() const
+    static bool writeTextFileAtomically(const juce::File& targetFile, const juce::String& text, juce::String& error)
+    {
+        juce::TemporaryFile tempFile(targetFile);
+        if (!tempFile.getFile().replaceWithText(text))
+        {
+            error = "unable to write temporary file";
+            return false;
+        }
+        if (!tempFile.overwriteTargetFileWithTemporary())
+        {
+            error = "unable to replace target file";
+            return false;
+        }
+        return true;
+    }
+
+    void saveSelectedMidiOutputToConfig()
     {
         auto payloadObj = std::make_unique<juce::DynamicObject>();
         payloadObj->setProperty("selectedOutputIdentifier", midiOutputDevice.getSelectedIdentifier());
         payloadObj->setProperty("selectedOutputName", midiOutputDevice.getSelectedName());
-        getMidiOutputConfigPath().replaceWithText(juce::JSON::toString(juce::var(payloadObj.release())));
+        juce::String writeError;
+        if (!writeTextFileAtomically(getMidiOutputConfigPath(),
+                                     juce::JSON::toString(juce::var(payloadObj.release())),
+                                     writeError))
+        {
+            setStatusMessage("Failed to save MIDI output selection.");
+            juce::Logger::writeToLog("MidiScorer: could not save MIDI output config: " + writeError);
+        }
     }
 
     void loadSelectedMidiOutputFromConfig()
@@ -1073,7 +1094,14 @@ private:
 
         juce::String error;
         if (!midiOutputDevice.openByIdentifier(outputIdentifier, error))
+        {
+            midiOutputRestoreWarning = "Saved MIDI output unavailable: " + error;
             juce::Logger::writeToLog("MidiScorer: could not restore MIDI output: " + error);
+        }
+        else
+        {
+            midiOutputRestoreWarning.clear();
+        }
     }
 
     void loadLastMidiDirectoryFromPreset()
@@ -1096,7 +1124,7 @@ private:
             lastMidiDirectory = candidate;
     }
 
-    void saveLastMidiDirectoryToPreset() const
+    void saveLastMidiDirectoryToPreset()
     {
         if (!lastMidiDirectory.isDirectory())
             return;
@@ -1119,7 +1147,9 @@ private:
         }
 
         obj->setProperty("lastMidiDirectory", lastMidiDirectory.getFullPathName());
-        file.replaceWithText(juce::JSON::toString(juce::var(obj.release())));
+        juce::String writeError;
+        if (!writeTextFileAtomically(file, juce::JSON::toString(juce::var(obj.release())), writeError))
+            juce::Logger::writeToLog("MidiScorer: could not save last MIDI directory: " + writeError);
     }
 
     static juce::File findFirstMidiFile(const juce::StringArray& files)
@@ -1161,9 +1191,13 @@ private:
         for (int i = 0; i < static_cast<int>(recentMidiFiles.size()); ++i)
         {
             const juce::File file(recentMidiFiles[(size_t) i]);
-            recentFilesSelector.addItem(file.getFileName(), i + 2);
+            const auto parentName = file.getParentDirectory().getFileName();
+            const auto label = parentName.isNotEmpty()
+                ? (file.getFileName() + "  [" + parentName + "]")
+                : file.getFileName();
+            recentFilesSelector.addItem(label, i + 2);
         }
-        recentFilesSelector.setSelectedId(1, juce::dontSendNotification);
+        recentFilesSelector.setSelectedId(recentMidiFiles.empty() ? 1 : 2, juce::dontSendNotification);
         openRecentButton.setEnabled(!recentMidiFiles.empty());
     }
 
@@ -1175,9 +1209,7 @@ private:
     void openSelectedRecentFile()
     {
         const int id = recentFilesSelector.getSelectedId();
-        if (id < 2)
-            return;
-        const int index = id - 2;
+        const int index = id < 2 ? 0 : (id - 2);
         if (index < 0 || index >= static_cast<int>(recentMidiFiles.size()))
             return;
         const juce::File file(recentMidiFiles[(size_t) index]);
@@ -1217,7 +1249,7 @@ private:
         }
     }
 
-    void saveRecentFilesToPreset() const
+    void saveRecentFilesToPreset()
     {
         const auto file = getPresetFilePath();
         juce::var parsed;
@@ -1240,7 +1272,9 @@ private:
         for (const auto& path : recentMidiFiles)
             recent.add(path);
         obj->setProperty("recentMidiFiles", juce::var(recent));
-        file.replaceWithText(juce::JSON::toString(juce::var(obj.release())));
+        juce::String writeError;
+        if (!writeTextFileAtomically(file, juce::JSON::toString(juce::var(obj.release())), writeError))
+            juce::Logger::writeToLog("MidiScorer: could not save recent MIDI files: " + writeError);
     }
 
     void applyLoopBoundsFromInputs(bool persist = true)
@@ -1267,8 +1301,7 @@ private:
         juce::String error;
         MidiProjectData loaded;
         bool rejectedType0 = false;
-        bool convertedType0 = false;
-        if (!loader.load(file, loaded, error, &rejectedType0, true, &convertedType0))
+        if (!loader.load(file, loaded, error, &rejectedType0, false))
         {
             if (rejectedType0)
             {
@@ -1318,10 +1351,9 @@ private:
             markCurrentScoreSongSettingsAsSaved();
             refreshSavePresetButtonDirtyStyle();
         }
-        setStatusMessage(convertedType0
-            ? ("Loaded: " + project.file.getFileName() + " (type 0 auto-converted)")
-            : (autoPresetLoaded ? ("Loaded: " + project.file.getFileName() + " (auto preset applied)")
-                                : ("Loaded: " + project.file.getFileName())));
+        setStatusMessage(autoPresetLoaded
+                             ? ("Loaded: " + project.file.getFileName() + " (auto preset applied)")
+                             : ("Loaded: " + project.file.getFileName()));
     }
 
     juce::String getSongPresetKey() const
@@ -1694,7 +1726,8 @@ private:
         obj->setProperty("loopBySong", juce::var(loopBySong.release()));
 
         const juce::var payload(obj.release());
-        const bool saveOk = file.replaceWithText(juce::JSON::toString(payload));
+        juce::String writeError;
+        const bool saveOk = writeTextFileAtomically(file, juce::JSON::toString(payload), writeError);
         if (saveOk)
             markCurrentScoreSongSettingsAsSaved();
         refreshSavePresetButtonDirtyStyle();
@@ -1704,6 +1737,11 @@ private:
                 setStatusMessage("Preset saved: " + file.getFullPathName());
             else
                 setStatusMessage("Failed to save preset.");
+        }
+        else if (!saveOk)
+        {
+            setStatusMessage("Preset autosave failed. Use Save Preset to retry.");
+            juce::Logger::writeToLog("MidiScorer: preset autosave failed: " + writeError);
         }
     }
 
@@ -2068,45 +2106,6 @@ private:
         });
     }
 
-    void exportMixedMidi()
-    {
-        if (project.tracks.empty())
-        {
-            setStatusMessage("Export skipped: load a MIDI file first.");
-            return;
-        }
-
-        exportFileChooser = std::make_unique<juce::FileChooser>(
-            "Export mixed MIDI file",
-            lastMidiDirectory.isDirectory() ? lastMidiDirectory.getChildFile(project.file.getFileNameWithoutExtension() + "-mix.mid")
-                                            : project.file.getSiblingFile(project.file.getFileNameWithoutExtension() + "-mix.mid"),
-            "*.mid",
-            false,
-            false,
-            this);
-
-        const auto chooserFlags = juce::FileBrowserComponent::saveMode
-            | juce::FileBrowserComponent::canSelectFiles
-            | juce::FileBrowserComponent::warnAboutOverwriting;
-        exportFileChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& chooser)
-        {
-            auto outFile = chooser.getResult();
-            if (!outFile.getFileName().containsIgnoreCase(".mid"))
-                outFile = outFile.withFileExtension(".mid");
-            if (outFile == juce::File())
-                return;
-
-            juce::String error;
-            if (!MidiMixExporter::exportMixedType1File(project, trackMixState, outFile, error))
-            {
-                setStatusMessage("Export failed: " + error);
-                return;
-            }
-
-            setStatusMessage("Exported mixed MIDI: " + outFile.getFullPathName());
-        });
-    }
-
     void refreshTrackSelectors()
     {
         staff1TrackSelector.clear(juce::dontSendNotification);
@@ -2350,17 +2349,17 @@ private:
     void onTransportToggleClicked()
     {
         if (playbackController.isPlaying())
-            pausePlayback();
+            stopPlaybackAndReset();
         else
-            continueArmed ? continuePlaybackFromBar() : startPlayback();
+            startPlayback();
     }
 
     void refreshTransportToggleButtonText()
     {
         if (playbackController.isPlaying())
-            transportToggleButton.setButtonText("Pause");
+            transportToggleButton.setButtonText("Stop");
         else
-            transportToggleButton.setButtonText(continueArmed ? "Resume" : "Start");
+            transportToggleButton.setButtonText("Start");
     }
 
     void refreshTransportToggleButtonStyle(bool hasProject, bool isPlaying)
@@ -2384,7 +2383,6 @@ private:
         const bool hasProject = !project.tracks.empty();
         const bool isPlaying = playbackController.isPlaying();
         transportToggleButton.setEnabled(hasProject);
-        pauseButton.setEnabled(hasProject && isPlaying);
         refreshTransportToggleButtonText();
         refreshTransportToggleButtonStyle(hasProject, isPlaying);
         continueButton.setEnabled(hasProject && !isPlaying && continueArmed);
@@ -2392,7 +2390,6 @@ private:
         loopEnabledToggle.setEnabled(hasProject);
         loopStartInput.setEnabled(hasProject);
         loopEndInput.setEnabled(hasProject);
-        exportMidiButton.setEnabled(hasProject);
     }
 
     juce::String buildSignatureText() const
@@ -2458,7 +2455,6 @@ private:
 
     juce::Label titleLabel;
     juce::TextButton loadButton;
-    juce::TextButton exportMidiButton;
     juce::Label staff1TrackLabel;
     juce::ComboBox staff1TrackSelector;
     juce::ComboBox staff1ClefSelector;
@@ -2469,7 +2465,6 @@ private:
     juce::ComboBox staff3TrackSelector;
     juce::ComboBox staff3ClefSelector;
     juce::TextButton transportToggleButton;
-    juce::TextButton pauseButton;
     juce::ComboBox accidentalSelector;
     juce::TextButton accidentalHelpButton;
     juce::ComboBox aliasSelector;
@@ -2517,9 +2512,9 @@ private:
     MidiOutputDevice midiOutputDevice;
     TrackMixState trackMixState;
     std::unique_ptr<juce::FileChooser> fileChooser;
-    std::unique_ptr<juce::FileChooser> exportFileChooser;
     juce::File lastMidiDirectory;
     std::vector<juce::String> recentMidiFiles;
+    juce::String midiOutputRestoreWarning;
     bool continueArmed = false;
     bool loopEnabled = false;
     int loopStartBar = 1;

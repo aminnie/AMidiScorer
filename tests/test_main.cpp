@@ -1,6 +1,5 @@
 #include <JuceHeader.h>
 #include "../src/midi/MidiProjectLoader.h"
-#include "../src/midi/MidiMixExporter.h"
 #include "../src/midi/TempoMap.h"
 #include "../src/midi/TrackNoteExtractor.h"
 #include "../src/notation/Quantizer.h"
@@ -422,81 +421,6 @@ void testTrackMixMidiSeed()
     expectTrue(state.getChannel(0) == 8, "Saved preset channel remains after manual set");
 }
 
-void testMidiMixExporter()
-{
-    MidiProjectData project;
-    project.file = juce::File::getCurrentWorkingDirectory().getChildFile("fixture.mid");
-    project.maxBar = 2;
-    project.tempoMap.build(480.0,
-                           { { 0.0, 120.0 } },
-                           { { 0.0, 4, 4 } },
-                           960.0);
-
-    MidiTrackData track1;
-    track1.name = "Track 1";
-    auto t1On = juce::MidiMessage::noteOn(1, 60, (juce::uint8) 100);
-    t1On.setTimeStamp(0.0);
-    track1.sequence.addEvent(t1On);
-    auto t1Off = juce::MidiMessage::noteOff(1, 60);
-    t1Off.setTimeStamp(240.0);
-    track1.sequence.addEvent(t1Off);
-
-    MidiTrackData track2;
-    track2.name = "Track 2";
-    auto t2On = juce::MidiMessage::noteOn(2, 67, (juce::uint8) 110);
-    t2On.setTimeStamp(0.0);
-    track2.sequence.addEvent(t2On);
-    auto t2Off = juce::MidiMessage::noteOff(2, 67);
-    t2Off.setTimeStamp(240.0);
-    track2.sequence.addEvent(t2Off);
-
-    project.tracks.push_back(track1);
-    project.tracks.push_back(track2);
-
-    TrackMixState mixState;
-    mixState.resizeForTrackCount(2);
-    mixState.setMuted(0, true);
-    mixState.setChannel(1, 5);
-
-    juce::TemporaryFile tempFile("mixed-export.mid");
-    juce::String error;
-    expectTrue(MidiMixExporter::exportMixedType1File(project, mixState, tempFile.getFile(), error),
-               "MIDI mix exporter writes mixed MIDI file");
-
-    juce::FileInputStream stream(tempFile.getFile());
-    juce::MidiFile exported;
-    expectTrue(stream.openedOk() && exported.readFrom(stream), "Exported MIDI can be parsed");
-
-    int noteOnCount = 0;
-    bool track1Removed = true;
-    bool remappedToChannel5 = false;
-    for (int track = 0; track < exported.getNumTracks(); ++track)
-    {
-        if (const auto* seq = exported.getTrack(track))
-        {
-            for (int i = 0; i < seq->getNumEvents(); ++i)
-            {
-                if (const auto* ev = seq->getEventPointer(i))
-                {
-                    const auto& msg = ev->message;
-                    if (msg.isNoteOn())
-                    {
-                        ++noteOnCount;
-                        if (msg.getNoteNumber() == 60)
-                            track1Removed = false;
-                        if (msg.getNoteNumber() == 67 && msg.getChannel() == 5)
-                            remappedToChannel5 = true;
-                    }
-                }
-            }
-        }
-    }
-
-    expectTrue(noteOnCount >= 1, "Exported MIDI contains note-on events");
-    expectTrue(track1Removed, "Muted track events are removed in exported MIDI");
-    expectTrue(remappedToChannel5, "Exported MIDI applies channel remap");
-}
-
 void testCheckedInFixturesLoad()
 {
     auto fixturesDir = juce::File::getCurrentWorkingDirectory().getChildFile("../tests/fixtures");
@@ -549,7 +473,6 @@ int main()
     testMidiPlaybackAdapterSeekAndDispatch();
     testTrackMixProcessor();
     testTrackMixMidiSeed();
-    testMidiMixExporter();
     testCheckedInFixturesLoad();
 
     if (failures == 0)

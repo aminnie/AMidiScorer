@@ -14,6 +14,8 @@ MidiScorer is a JUCE desktop app that loads a MIDI file, builds timing/key metad
 - a score-like staff view (up to 3 staffs)
 - chord annotations (static + live)
 
+The default user workflow is non-destructive: loaded MIDI files are treated as source input, while user edits (track selection, mix controls, transpose/key/tempo overrides, loop settings, etc.) are stored and restored from profile state in `Documents/MidiScorer/ui_preset.json`.
+
 Core modules:
 
 - `src/midi/MidiProjectLoader.h` - MIDI ingestion, SMF type/SMPTE validation, metadata extraction

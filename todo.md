@@ -128,3 +128,80 @@ This checklist tracks code-review findings and implementation work items.
     - Loader detects SMF type from the file header and rejects type **0**.
     - UI shows a warning modal asking the user to save/export as type **1** in a MIDI editor.
     - SMPTE rejection tests remain valid with a type **1** fixture header.
+
+## Priority 7 - Reliability and correctness (highest impact)
+
+- [ ] **P0 / S** Remove production debug instrumentation from Effects tab (`appendDebugLog`, hardcoded `debug-e2bc95.log`).
+  - Files: `src/app/TracksTabComponent.h`
+  - Acceptance:
+    - No debug file writes occur during Effects-tab interaction.
+    - Solo/mute updates still refresh rows safely and deterministically.
+- [ ] **P0 / M** Reconcile SMF type **0** behavior across loader/UI/tests/docs.
+  - Files: `src/midi/MidiProjectLoader.h`, `src/app/MainComponent.h`, `tests/test_main.cpp`, `README.md`, `CONTRIBUTING.md`, `TECHNICAL_DESIGN.md`
+  - Acceptance:
+    - App load path and docs consistently describe type **0** rejection with conversion guidance.
+    - Loader tests continue to verify type checks and user-facing error guidance.
+- [ ] **P0 / M** Make preset writes atomic and failure-safe (`ui_preset.json` temp-write + replace, user-visible failure path).
+  - Files: `src/app/MainComponent.h`
+  - Acceptance:
+    - Preset writes use atomic replacement instead of direct overwrite.
+    - Failed writes surface an actionable user-facing status message.
+- [ ] **P0 / S** Surface MIDI output restore failures in UI instead of logger-only handling.
+  - Files: `src/app/MainComponent.h`, `src/app/PlayerTabComponent.h`
+  - Acceptance:
+    - Failed output restore shows a warning in Start tab status text.
+    - Manual output selection clears stale restore warning state.
+
+## Priority 8 - Maintainability and performance
+
+- [ ] **P1 / L** Decompose `MainComponent` into smaller services (`PresetStore`, `ScoreRebuildService`, transport coordinator).
+  - Files: `src/app/MainComponent.h` and extracted helpers under `src/app/`
+  - Acceptance:
+    - Orchestration remains behavior-compatible while reducing single-header coupling.
+- [ ] **P1 / M** Remove duplicate heavy chord detection during rebuild by computing static chord annotations once per rebuild and reusing across staff models.
+  - Files: `src/app/MainComponent.h`, `src/harmony/ChordDetector.h`
+  - Acceptance:
+    - Full staff rebuild avoids repeated whole-song chord scans.
+- [ ] **P1 / S** Handle note-on velocity 0 as note-off in extractor with regression test.
+  - Files: `src/midi/TrackNoteExtractor.h`, `tests/test_main.cpp`
+  - Acceptance:
+    - Velocity-0 note-on closes active notes as expected.
+- [ ] **P1 / S** Debounce preset autosave on mix slider edits to avoid UI-thread rewrite thrash.
+  - Files: `src/app/MainComponent.h`
+  - Acceptance:
+    - Rapid slider changes batch into fewer preset writes.
+- [ ] **P1 / M** Define and implement tempo-override behavior for multi-tempo songs.
+  - Files: `src/playback/PlaybackController.h`, `src/app/MainComponent.h`, tests as needed
+  - Acceptance:
+    - Behavior is deterministic and documented for files with tempo changes.
+
+## Priority 9 - Test/CI hardening and product UX enhancements
+
+- [ ] **P1 / S** Pin JUCE revision in CI for stability.
+  - Files: `.github/workflows/ci.yml`
+  - Acceptance:
+    - CI uses a fixed JUCE tag/commit instead of floating default branch.
+- [ ] **P1 / M** Convert fixture load-smoke checks into behavioral assertions for tempo/time-signature and ties fixtures.
+  - Files: `tests/test_main.cpp`, `tests/fixtures/fixture-specs.md`
+  - Acceptance:
+    - Fixture tests validate expected musical/timing behavior, not only parse success.
+- [ ] **P1 / S** Add explicit CTest working directory and deterministic fixture path strategy.
+  - Files: `CMakeLists.txt`, `tests/test_main.cpp`
+  - Acceptance:
+    - Fixture tests run reliably regardless of invocation directory.
+- [ ] **P1 / S** Fix dirty-state coverage gaps for clef and score color settings.
+  - Files: `src/app/MainComponent.h`
+  - Acceptance:
+    - Clef and score color edits correctly trigger Save Preset dirty style.
+- [ ] **P2 / M** Add startup resume workflow (optional reopen last MIDI/recent path).
+  - Files: `src/app/MainComponent.h`, `Main.cpp`
+  - Acceptance:
+    - User can opt in to reopening recent/last MIDI on startup.
+- [ ] **P2 / M** Add missing checked-in fixtures for syncopation and altered-chord scenarios plus assertions.
+  - Files: `tests/fixtures/`, `tests/fixtures/fixture-specs.md`, `tests/test_main.cpp`
+  - Acceptance:
+    - Fixture specs for syncopation/altered chords are represented by checked-in files and tests.
+- [ ] **P2 / L** Add score export options (PNG/PDF) and/or rendering regression tests.
+  - Files: `src/notation/ScoreRenderer.h`, `src/app/MainComponent.h`, tests/docs as needed
+  - Acceptance:
+    - A documented export or regression-testing path improves score-output reliability.

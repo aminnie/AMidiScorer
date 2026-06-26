@@ -40,6 +40,7 @@ Recent feature areas to keep isolated in PRs:
 - `ScoreRenderer` should remain visual-only (no timing or harmonic logic decisions).
 - `ChordDetector` should own chord matching and naming policy.
 - `MainComponent` should orchestrate UI state and trigger score rebuilds.
+- Keep MIDI source files non-destructive in normal app workflow; persist user edits in profile data (`ui_preset.json`).
 
 ## Testing expectations
 
@@ -61,6 +62,7 @@ At minimum before submitting:
 3. Smoke test in app:
    - load a type **1** MIDI file
    - verify a type **0** MIDI file shows the conversion warning modal and does not load
+   - verify edits are restored via **Load Preset** (without rewriting source MIDI)
    - verify auto-preset load behavior
    - switch staff tracks and clefs
    - toggle chord-track checkboxes

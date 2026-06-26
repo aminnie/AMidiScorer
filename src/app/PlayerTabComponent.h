@@ -108,10 +108,13 @@ private:
         if (outputName.isEmpty())
             outputName = "(None)";
 
-        statusLabel.setText(juce::String(isPlaying ? "Playing" : "Stopped")
-                                + "  | Bar " + juce::String(currentBar) + "/" + juce::String(maxBar)
-                                + "  | Output: " + outputName,
-                            juce::dontSendNotification);
+        juce::String statusText = juce::String(isPlaying ? "Playing" : "Stopped")
+            + "  | Bar " + juce::String(currentBar) + "/" + juce::String(maxBar)
+            + "  | Output: " + outputName;
+        const auto restoreWarning = scorePage.getMidiOutputRestoreWarning();
+        if (restoreWarning.isNotEmpty())
+            statusText << "  | Warning: " << restoreWarning;
+        statusLabel.setText(statusText, juce::dontSendNotification);
     }
 
     MainComponent& scorePage;
