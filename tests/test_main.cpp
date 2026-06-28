@@ -63,6 +63,64 @@ void testQuantizer()
     expectTrue(quantized.front().value == NoteValue::quarter, "Quarter duration detected");
 }
 
+void testDottedDurationQuantization()
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 7680.0);
+
+    MidiNoteEvent dottedHalf;
+    dottedHalf.noteNumber = 60;
+    dottedHalf.startTick = 0.0;
+    dottedHalf.endTick = 2880.0;
+    auto quantizedHalf = Quantizer::quantizeTrack(std::vector<MidiNoteEvent> { dottedHalf }, map);
+    expectTrue(!quantizedHalf.empty(), "Dotted-half quantizer returns notes");
+    if (!quantizedHalf.empty())
+    {
+        expectTrue(quantizedHalf.front().value == NoteValue::half, "Three quarters quantizes to a half note value");
+        expectTrue(quantizedHalf.front().dotted, "Three quarters quantizes to a dotted duration");
+        expectTrue(std::abs(quantizedHalf.front().durationQuarter - 3.0) < 1.0e-6,
+                   "Three quarters keeps a 3.0 quarter duration");
+    }
+
+    MidiNoteEvent dottedQuarter;
+    dottedQuarter.noteNumber = 62;
+    dottedQuarter.startTick = 0.0;
+    dottedQuarter.endTick = 1440.0;
+    auto quantizedQuarter = Quantizer::quantizeTrack(std::vector<MidiNoteEvent> { dottedQuarter }, map);
+    expectTrue(!quantizedQuarter.empty(), "Dotted-quarter quantizer returns notes");
+    if (!quantizedQuarter.empty())
+    {
+        expectTrue(quantizedQuarter.front().value == NoteValue::quarter, "One and a half quarters quantizes to a quarter note value");
+        expectTrue(quantizedQuarter.front().dotted, "One and a half quarters quantizes to a dotted duration");
+        expectTrue(std::abs(quantizedQuarter.front().durationQuarter - 1.5) < 1.0e-6,
+                   "One and a half quarters keeps a 1.5 quarter duration");
+    }
+
+    QuantizedNote manualDottedHalf;
+    manualDottedHalf.midiNote = 64;
+    manualDottedHalf.startQuarter = 0.0;
+    manualDottedHalf.durationQuarter = 3.0;
+    manualDottedHalf.value = NoteValue::half;
+    manualDottedHalf.dotted = true;
+
+    ScoreModel model;
+    model.build(map, std::vector<QuantizedNote> { manualDottedHalf }, {}, 1);
+    const auto bars = model.getWindowBars(1, 0, 0);
+    expectTrue(!bars.empty(), "Dotted-half score model returns a bar");
+    if (!bars.empty())
+    {
+        bool foundDottedHalf = false;
+        for (const auto& symbol : bars[0].notes)
+        {
+            if (!symbol.isRest && symbol.midiNote == 64)
+                foundDottedHalf = symbol.value == NoteValue::half && symbol.dotted;
+        }
+        expectTrue(foundDottedHalf, "Score model preserves dotted half symbols");
+    }
+}
+
 void testChordDetector()
 {
     TempoMap map;
@@ -915,6 +973,7 @@ int main()
 {
     testTempoMap();
     testQuantizer();
+    testDottedDurationQuantization();
     testChordDetector();
     testMidiLoaderRejectsType0();
     testMidiLoaderRejectsSmpte();

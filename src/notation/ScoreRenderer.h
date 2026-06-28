@@ -396,6 +396,39 @@ private:
         return 12.0f;
     }
 
+    static bool usesOpenNoteHead(NoteValue value)
+    {
+        return value == NoteValue::half || value == NoteValue::whole;
+    }
+
+    static void drawNoteHead(juce::Graphics& g, float x, float y, float w, float h, NoteValue value)
+    {
+        const float top = y - h * 0.5f;
+        if (usesOpenNoteHead(value))
+            g.drawEllipse(x, top, w, h, 1.2f);
+        else
+            g.fillEllipse(x, top, w, h);
+    }
+
+    static void drawAugmentationDot(juce::Graphics& g, float centerX, float centerY)
+    {
+        const float size = 3.5f;
+        g.fillEllipse(centerX - size * 0.5f, centerY - size * 0.5f, size, size);
+    }
+
+    static float restSymbolDotOffset(NoteValue value)
+    {
+        switch (value)
+        {
+            case NoteValue::whole: return 14.0f;
+            case NoteValue::half: return 14.0f;
+            case NoteValue::quarter: return 12.0f;
+            case NoteValue::eighth: return 12.0f;
+            case NoteValue::sixteenth: return 12.0f;
+        }
+        return 12.0f;
+    }
+
     static void drawRestSymbol(juce::Graphics& g, float x, float centerY, NoteValue value)
     {
         switch (value)
@@ -674,7 +707,10 @@ private:
             if (note.isRest)
             {
                 g.setColour(noteColour);
-                drawRestSymbol(g, x + 4.0f, restCenterY, note.value);
+                const float restX = x + 4.0f;
+                drawRestSymbol(g, restX, restCenterY, note.value);
+                if (note.dotted)
+                    drawAugmentationDot(g, restX + restSymbolDotOffset(note.value), restCenterY);
                 continue;
             }
 
@@ -687,7 +723,7 @@ private:
             if (!isDrumStaff)
             {
                 drawLedgerLines(g, staffRect, x + w * 0.5f, y);
-                g.fillEllipse(x, y - h * 0.5f, w, h);
+                drawNoteHead(g, x, y, w, h, note.value);
             }
             else if (isCymbalOrHatMidi(displayNote))
             {
@@ -698,7 +734,7 @@ private:
             }
             else
             {
-                g.fillEllipse(x, y - h * 0.5f, w, h);
+                drawNoteHead(g, x, y, w, h, note.value);
             }
 
             if (note.value != NoteValue::whole)
@@ -711,6 +747,9 @@ private:
                 g.drawLine(x + w, y - 24.0f, x + w + 6.0f, y - 20.0f, 1.1f);
             if (note.value == NoteValue::sixteenth)
                 g.drawLine(x + w, y - 18.0f, x + w + 6.0f, y - 14.0f, 1.1f);
+
+            if (note.dotted)
+                drawAugmentationDot(g, x + w + 5.0f, y);
 
             const auto accidentalText = accidentalTextForMidi(displayNote);
             if (accidentalText.isNotEmpty())

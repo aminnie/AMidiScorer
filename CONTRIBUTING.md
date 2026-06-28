@@ -28,7 +28,8 @@ Recent feature areas to keep isolated in PRs:
 - multi-staff selection/clef UI
 - chord-track checkbox source selection
 - live eighth-note chord marker behavior
-- rest insertion and rendering
+- rest insertion and rendering (including dotted rests)
+- open vs filled notehead rendering by duration
 - first-visible-bar key-signature drawing
 - drum clef notation and percussion notehead behavior
 - per-staff header labels from selected track names
@@ -53,7 +54,7 @@ For changes in:
 - `src/harmony/ChordDetector.h`: add chord match and naming-option checks.
 - `src/app/MainComponent.h`: include manual playback smoke coverage for timer/live marker behavior.
 - `src/notation/ScoreRenderer.h`: include manual rendering checks for clef-specific key signature positioning.
-- `src/notation/ScoreRenderer.h`: include manual checks for drum note placement/noteheads and per-staff header text.
+- `src/notation/ScoreRenderer.h`: include manual checks for drum note placement/noteheads, open vs filled noteheads, augmentation dots, and per-staff header text.
 
 At minimum before submitting:
 

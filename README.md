@@ -17,9 +17,10 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
   - per-staff clef selection (`Treble` / `Bass` / `Drum`)
 - Build tempo, time-signature, and key-signature maps from MIDI meta events.
 - Quantize note starts and durations to:
-  - 1/16, 1/8, 1/4, 1/2, whole
+  - 1/16, 1/8, 1/4, 1/2, whole, plus dotted variants (e.g. dotted quarter = 1.5 beats, dotted half = 3 beats)
 - Render score-style notation with:
-  - noteheads, stems, flags, ties
+  - noteheads, stems, flags, ties, augmentation dots
+  - open (outline) noteheads for half and whole notes; filled noteheads for quarter and shorter values
   - key-aware accidental display (`#`/`b` preference by key signature)
   - first-visible-bar start symbols:
     - enlarged clef glyphs (treble/bass)
@@ -160,7 +161,7 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 
 - Type **0** files are rejected with conversion guidance; SMPTE/non-PPQ files remain unsupported.
 - SMPTE/non-PPQ MIDI timing is not supported.
-- Quantization is limited to 1/16 through whole-note values.
+- Quantization is limited to 1/16 through whole-note values, including single augmentation dots (not triplets or double dots).
 - Rests, beaming, and accidental handling are practical approximations, not full engraving rules.
 - Chord detection uses deterministic template scoring and may be ambiguous for dense voicings.
 - Playback drives visual sync and optional MIDI output from one shared timeline.
@@ -186,7 +187,7 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 - `Notation model`
   - `src/notation/ScoreModel.h` inserts explicit rest symbols per bar by gap-filling occupied note spans.
 - `Notation rendering`
-  - `src/notation/ScoreRenderer.h` handles static chord labels, live chord marker, notes/rests, per-staff instrument header labels, first-visible-bar clef/key symbols, and drum-mode note rendering.
+  - `src/notation/ScoreRenderer.h` handles static chord labels, live chord marker, notes/rests (open vs filled noteheads, augmentation dots), per-staff instrument header labels, first-visible-bar clef/key symbols, and drum-mode note rendering.
 - `UI orchestration`
   - `src/app/MainComponent.h` coordinates all preferences, preset load/save, multi-staff rebuilds, and timer-based updates.
 

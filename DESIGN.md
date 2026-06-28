@@ -110,7 +110,7 @@ Track mix is source-track based (not MIDI-channel strip based):
   - `chords` (`ChordAnnotation`, bar-relative)
 - `ScoreNoteSymbol`
   - absolute quarter position + `quarterInBar`
-  - quantized duration (`durationQuarter`, `value`)
+  - quantized duration (`durationQuarter`, `value`, `dotted`)
   - MIDI pitch
   - `isRest` flag
   - `tieIntoNextBar` flag
@@ -123,11 +123,13 @@ Quantization occurs before score construction (`Quantizer` output enters `ScoreM
 
 Current rhythmic target set:
 
-- sixteenth (0.25q)
-- eighth (0.5q)
-- quarter (1.0q)
-- half (2.0q)
-- whole (4.0q)
+- sixteenth (0.25q), dotted sixteenth (0.375q)
+- eighth (0.5q), dotted eighth (0.75q)
+- quarter (1.0q), dotted quarter (1.5q)
+- half (2.0q), dotted half (3.0q)
+- whole (4.0q), dotted whole (6.0q)
+
+Each duration maps to a base `NoteValue` plus an optional `dotted` flag (e.g. 3.0q -> half + dot).
 
 This intentionally trades engraving completeness for stable readability in mixed MIDI sources.
 
@@ -151,7 +153,7 @@ Process per bar:
 1. Collect occupied time spans from non-rest notes.
 2. Merge overlapping spans.
 3. Fill uncovered regions with rests using greedy longest-fit durations:
-   - 4.0, 2.0, 1.0, 0.5, 0.25 quarter notes
+   - 6.0, 4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.375, 0.25 quarter notes (dotted values included)
 
 This is handled by `insertRestsIntoBar()` + `addRestGap()`.
 
@@ -183,8 +185,10 @@ Because octave shift is renderer-only, it does not alter MIDI playback, quantiza
 - bar frame, staff lines, beat guides
 - first-visible-bar clef and key signature glyphs
 - noteheads/stems/flags/ledger lines
+  - half and whole notes use open (stroked) noteheads; quarter and shorter use filled noteheads
+  - augmentation dots when `dotted=true`
 - ties
-- rest symbols by note value
+- rest symbols by note value (with dots when dotted)
 - top header labels (`Bar N` + track/instrument label)
 
 The component supports light/dark color schemes with the same geometry.
@@ -296,19 +300,24 @@ for midiNoteEvent in trackNotes:
     rawDurQ = max(0, rawEndQ - rawStartQ)
 
     q.startQuarter = round(rawStartQ / 0.25) * 0.25
-    q.durationQuarter = nearest(rawDurQ, [0.25, 0.5, 1.0, 2.0, 4.0])
-    q.value = quarterToValue(q.durationQuarter) // 16th..whole
+    q.durationQuarter = nearest(rawDurQ, dotted + undotted vocabulary)
+    symbol = durationFromQuarter(q.durationQuarter)
+    q.value = symbol.value
+    q.dotted = symbol.dotted
 ```
 
-`quarterToValue` thresholds:
+`durationFromQuarter` picks the closest duration from:
 
-- `<= 0.25` -> sixteenth
-- `<= 0.5` -> eighth
-- `<= 1.0` -> quarter
-- `<= 2.0` -> half
-- else -> whole
+- undotted: 0.25, 0.5, 1.0, 2.0, 4.0
+- dotted: 0.375, 0.75, 1.5, 3.0, 6.0
 
-This is intentionally not full engraving quantization (tuplets/dots/voice splitting); it favors stable readability for arbitrary MIDI.
+Examples:
+
+- 3.0q -> half + dot
+- 1.5q -> quarter + dot
+- 2.0q -> half (no dot)
+
+This is intentionally not full engraving quantization (tuplets/double dots/voice splitting); it favors stable readability for arbitrary MIDI.
 
 #### 3.9.3 Bar segmentation, ties, and normalization
 
@@ -362,7 +371,7 @@ merged = mergeOverlaps(occupied)
 cursor = 0
 for span in merged:
     if span.start > cursor:
-        addRestGap(cursor, span.start - cursor) // greedy: 4,2,1,0.5,0.25
+        addRestGap(cursor, span.start - cursor) // greedy: 6,4,3,2,1.5,1,0.75,0.5,0.375,0.25
     cursor = max(cursor, span.end)
 
 if cursor < barDuration:
@@ -438,15 +447,21 @@ flowchart TD
   restCheck -->|no| pitchPrep[Compute x and y]
   pitchPrep --> noteHead{drumCymbalOrHat}
   noteHead -->|yes| xHead[Draw x-notehead]
-  noteHead -->|no| ellipseHead[Draw ellipse notehead]
+  noteHead -->|no| headStyle{halfOrWhole}
+  headStyle -->|yes| openHead[Draw open ellipse notehead]
+  headStyle -->|no| filledHead[Draw filled ellipse notehead]
   xHead --> stemCheck{value != whole}
-  ellipseHead --> stemCheck
+  openHead --> stemCheck
+  filledHead --> stemCheck
   stemCheck -->|yes| stemDraw[Draw stem]
-  stemCheck -->|no| accidentalStep
+  stemCheck -->|no| dotCheck
   stemDraw --> flagCheck{eighthOrSixteenth}
   flagCheck -->|yes| flagDraw[Draw flag strokes]
-  flagCheck -->|no| accidentalStep
-  flagDraw --> accidentalStep[Draw accidental text if needed]
+  flagCheck -->|no| dotCheck
+  flagDraw --> dotCheck{dotted}
+  dotCheck -->|yes| dotDraw[Draw augmentation dot]
+  dotCheck -->|no| accidentalStep
+  dotDraw --> accidentalStep[Draw accidental text if needed]
   accidentalStep --> tieCheck{tieIntoNextBar}
   tieCheck -->|yes| tieDraw[Draw tie arc]
   tieCheck -->|no| beamPass[Evaluate adjacent-note beaming pass]
@@ -455,13 +470,14 @@ flowchart TD
 
 For each symbol in bar order:
 
-- rest symbol -> draw rest path/rect by `NoteValue`
+- rest symbol -> draw rest path/rect by `NoteValue`; draw augmentation dot when `dotted`
 - pitched note:
   - compute x from `quarterInBar`
   - compute y from clef/pitch mapping
-  - draw notehead (ellipse or x-notehead class for cymbal/hat drums)
+  - draw notehead (open ellipse for half/whole, filled for shorter, or x-notehead for cymbal/hat drums)
   - draw stem unless whole note
   - draw flags for eighth/sixteenth
+  - draw augmentation dot when `dotted`
   - draw accidental text (if any)
   - draw tie arc when `tieIntoNextBar=true`
 
@@ -892,7 +908,7 @@ These constraints keep behavior predictable and maintainable for mixed-quality M
 
 Likely future improvements:
 
-- richer rhythmic values (triplets, dotted durations)
+- richer rhythmic values (triplets, double dots)
 - voice separation for dense piano tracks
 - stronger chord context model (inversion weighting, temporal smoothing)
 - configurable chord detection window sizes

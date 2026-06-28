@@ -13,10 +13,11 @@
 
 ## 2) syncopated-note-durations
 - Notes starting off-beat (16th offsets)
-- Durations quantized to 1/16, 1/8, 1/4, 1/2, 1
+- Durations quantized to 1/16, 1/8, 1/4, 1/2, 1, plus dotted variants
 - Purpose: verify quantizer rounding and symbol mapping
 - Related tests:
   - `testQuantizer()`
+  - `testDottedDurationQuantization()`
   - `testScoreModelNormalizesChordQuarterInBar()`
   - `testSyncopatedDurationsFixtureBehavior()` via `syncopated_durations.mid`
 

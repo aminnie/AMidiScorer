@@ -21,6 +21,7 @@ struct ScoreNoteSymbol
     double durationQuarter = 1.0;
     int midiNote = 60;
     NoteValue value = NoteValue::quarter;
+    bool dotted = false;
     bool isRest = false;
     bool tieIntoNextBar = false;
 };
@@ -96,7 +97,9 @@ public:
                 symbol.quarterInBar = juce::jmax(0.0, segmentStartQuarter - barDownbeatQuarter);
                 symbol.durationQuarter = segmentDurationQuarter;
                 symbol.midiNote = n.midiNote;
-                symbol.value = quarterToNoteValue(segmentDurationQuarter);
+                const auto durationSymbol = Quantizer::durationFromQuarter(segmentDurationQuarter);
+                symbol.value = durationSymbol.value;
+                symbol.dotted = durationSymbol.dotted;
                 symbol.tieIntoNextBar = segmentEndQuarter < noteEndQuarter - 1.0e-6;
                 bars[(size_t) idx].notes.push_back(symbol);
 
@@ -158,38 +161,12 @@ public:
     bool empty() const { return bars.empty(); }
 
 private:
-    static double noteValueToQuarter(NoteValue value)
-    {
-        switch (value)
-        {
-            case NoteValue::sixteenth: return 0.25;
-            case NoteValue::eighth: return 0.5;
-            case NoteValue::quarter: return 1.0;
-            case NoteValue::half: return 2.0;
-            case NoteValue::whole: return 4.0;
-        }
-        return 1.0;
-    }
-
-    static NoteValue quarterToNoteValue(double durationQuarter)
-    {
-        if (durationQuarter <= 0.25 + 1.0e-6)
-            return NoteValue::sixteenth;
-        if (durationQuarter <= 0.5 + 1.0e-6)
-            return NoteValue::eighth;
-        if (durationQuarter <= 1.0 + 1.0e-6)
-            return NoteValue::quarter;
-        if (durationQuarter <= 2.0 + 1.0e-6)
-            return NoteValue::half;
-        return NoteValue::whole;
-    }
-
     static void addRestGap(ScoreBar& bar, double gapStartQuarterInBar, double gapDurationQuarter)
     {
         if (gapDurationQuarter <= 1.0e-6)
             return;
 
-        static constexpr double durations[] { 4.0, 2.0, 1.0, 0.5, 0.25 };
+        static constexpr double durations[] { 6.0, 4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.375, 0.25 };
         double cursor = gapStartQuarterInBar;
         double remaining = gapDurationQuarter;
 
@@ -205,12 +182,14 @@ private:
                 }
             }
 
+            const auto durationSymbol = Quantizer::durationFromQuarter(chosen);
             ScoreNoteSymbol rest;
             rest.barNumber = bar.barNumber;
             rest.quarterInBar = cursor;
             rest.quarter = cursor;
             rest.durationQuarter = chosen;
-            rest.value = quarterToNoteValue(chosen);
+            rest.value = durationSymbol.value;
+            rest.dotted = durationSymbol.dotted;
             rest.isRest = true;
             rest.tieIntoNextBar = false;
             bar.notes.push_back(rest);

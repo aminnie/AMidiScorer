@@ -1,7 +1,6 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include <array>
 #include <cmath>
 #include <vector>
 #include "../midi/TempoMap.h"
@@ -24,11 +23,69 @@ struct QuantizedNote
     double startQuarter = 0.0;
     double durationQuarter = 1.0;
     NoteValue value = NoteValue::quarter;
+    bool dotted = false;
 };
 
 class Quantizer
 {
 public:
+    struct DurationSymbol
+    {
+        NoteValue value = NoteValue::quarter;
+        bool dotted = false;
+    };
+
+    static DurationSymbol durationFromQuarter(double quarterLength)
+    {
+        struct Choice
+        {
+            double quarter;
+            NoteValue value;
+            bool dotted;
+        };
+
+        static constexpr Choice choices[] {
+            { 0.25, NoteValue::sixteenth, false },
+            { 0.375, NoteValue::sixteenth, true },
+            { 0.5, NoteValue::eighth, false },
+            { 0.75, NoteValue::eighth, true },
+            { 1.0, NoteValue::quarter, false },
+            { 1.5, NoteValue::quarter, true },
+            { 2.0, NoteValue::half, false },
+            { 3.0, NoteValue::half, true },
+            { 4.0, NoteValue::whole, false },
+            { 6.0, NoteValue::whole, true },
+        };
+
+        const auto clamped = juce::jlimit(0.125, 8.0, quarterLength);
+        DurationSymbol best;
+        double bestDist = std::numeric_limits<double>::max();
+        for (const auto& choice : choices)
+        {
+            const auto distance = std::abs(choice.quarter - clamped);
+            if (distance < bestDist)
+            {
+                bestDist = distance;
+                best.value = choice.value;
+                best.dotted = choice.dotted;
+            }
+        }
+        return best;
+    }
+
+    static double quarterFromDuration(NoteValue value, bool dotted)
+    {
+        double base = 1.0;
+        switch (value)
+        {
+            case NoteValue::sixteenth: base = 0.25; break;
+            case NoteValue::eighth: base = 0.5; break;
+            case NoteValue::quarter: base = 1.0; break;
+            case NoteValue::half: base = 2.0; break;
+            case NoteValue::whole: base = 4.0; break;
+        }
+        return dotted ? base * 1.5 : base;
+    }
     static std::vector<QuantizedNote> quantizeTrack(const std::vector<MidiNoteEvent>& notes, const TempoMap& map)
     {
         std::vector<QuantizedNote> out;
@@ -47,7 +104,9 @@ public:
 
             q.startQuarter = quantizeToSixteenth(rawStartQuarter);
             q.durationQuarter = quantizeDuration(rawDurationQuarter);
-            q.value = quarterToValue(q.durationQuarter);
+            const auto durationSymbol = durationFromQuarter(q.durationQuarter);
+            q.value = durationSymbol.value;
+            q.dotted = durationSymbol.dotted;
             out.push_back(q);
         }
 
@@ -62,33 +121,12 @@ public:
 
     static double quantizeDuration(double quarterLength)
     {
-        static constexpr std::array<double, 5> choices { 0.25, 0.5, 1.0, 2.0, 4.0 };
-        const auto clamped = juce::jlimit(0.125, 8.0, quarterLength);
-
-        double best = choices.front();
-        double bestDist = std::numeric_limits<double>::max();
-        for (double choice : choices)
-        {
-            const auto d = std::abs(choice - clamped);
-            if (d < bestDist)
-            {
-                bestDist = d;
-                best = choice;
-            }
-        }
-        return best;
+        const auto symbol = durationFromQuarter(quarterLength);
+        return quarterFromDuration(symbol.value, symbol.dotted);
     }
 
     static NoteValue quarterToValue(double quarterLength)
     {
-        if (quarterLength <= 0.25 + 1.0e-6)
-            return NoteValue::sixteenth;
-        if (quarterLength <= 0.5 + 1.0e-6)
-            return NoteValue::eighth;
-        if (quarterLength <= 1.0 + 1.0e-6)
-            return NoteValue::quarter;
-        if (quarterLength <= 2.0 + 1.0e-6)
-            return NoteValue::half;
-        return NoteValue::whole;
+        return durationFromQuarter(quarterLength).value;
     }
 };
