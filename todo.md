@@ -137,7 +137,7 @@ This checklist tracks code-review findings and implementation work items.
     - No debug file writes occur during Effects-tab interaction.
     - Solo/mute updates still refresh rows safely and deterministically.
 - [x] **P0 / M** Reconcile SMF type **0** behavior across loader/UI/tests/docs.
-  - Files: `src/midi/MidiProjectLoader.h`, `src/app/MainComponent.h`, `tests/test_main.cpp`, `README.md`, `CONTRIBUTING.md`, `TECHNICAL_DESIGN.md`
+  - Files: `src/midi/MidiProjectLoader.h`, `src/app/MainComponent.h`, `tests/test_main.cpp`, `README.md`, `CONTRIBUTING.md`, `DESIGN.md`
   - Acceptance:
     - App load path and docs consistently describe type **0** rejection with conversion guidance.
     - Loader tests continue to verify type checks and user-facing error guidance.

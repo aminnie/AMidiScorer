@@ -1,4 +1,4 @@
-# MidiScorer Technical Design
+# MidiScorer Design
 
 This document describes the internal design of MidiScorer with emphasis on:
 

@@ -77,7 +77,7 @@ Typical agent loop after code changes:
 1. Build successfully.
 2. Run tests (`ctest`) for all code changes (docs-only changes are the exception).
 3. Smoke-check app behavior for affected UI/notation/chord paths.
-4. Update docs (`README.md`, `TECHNICAL_DESIGN.md`, `todo.md`) when user-visible behavior or architecture changes.
+4. Update docs (`README.md`, `DESIGN.md`, `todo.md`) when user-visible behavior or architecture changes.
 
 ## Testing policy
 
@@ -110,7 +110,7 @@ Typical agent loop after code changes:
 
 - `build.md` - configure, build, test, and launch for Windows and macOS
 - `README.md` - user-facing capabilities and developer notes
-- `TECHNICAL_DESIGN.md` - deep technical design for scoring and chord detection
+- `DESIGN.md` - deep technical design for scoring and chord detection
 - `CONTRIBUTING.md` - contributor expectations and smoke-test checklist
 - `tests/fixtures/fixture-specs.md` - fixture intent and test mapping
 
