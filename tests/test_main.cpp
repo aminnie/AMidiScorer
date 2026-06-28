@@ -9,6 +9,7 @@
 #include "../src/playback/PlaybackController.h"
 #include "../src/playback/TrackMixProcessor.h"
 #include "../src/playback/TrackMixMidiSeed.h"
+#include "../src/app/ScoreRebuildService.h"
 #include "../src/app/ScorePdfExporter.h"
 #include "../src/notation/ScoreRenderer.h"
 #include "TestFixturePaths.h"
@@ -150,6 +151,74 @@ void testChordDetector()
     expectTrue(!flatChords.empty(), "Chord detector supports naming options");
     if (!flatChords.empty())
         expectTrue(flatChords.front().symbol.contains("C"), "Chord naming options keep root identity");
+}
+
+void testChordDetectionResolution()
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 3840.0);
+
+    std::vector<MidiNoteEvent> notes;
+    for (int midiNote : { 72, 77, 79 })
+    {
+        MidiNoteEvent ev;
+        ev.noteNumber = midiNote;
+        ev.startSec = 0.0;
+        ev.endSec = 0.25;
+        notes.push_back(ev);
+    }
+
+    for (int midiNote : { 43, 67, 71, 74 })
+    {
+        MidiNoteEvent ev;
+        ev.noteNumber = midiNote;
+        ev.startSec = 0.25;
+        ev.endSec = 2.0;
+        notes.push_back(ev);
+    }
+
+    const auto quarterChords = ChordDetector::detect(
+        notes, map, 1, {}, ChordDetector::DetectionResolution::quarter);
+    const auto eighthChords = ChordDetector::detect(
+        notes, map, 1, {}, ChordDetector::DetectionResolution::eighth);
+
+    bool eighthStartsWithC = false;
+    for (const auto& chord : eighthChords)
+    {
+        if (chord.barNumber == 1 && std::abs(chord.quarter) < 1.0e-6)
+            eighthStartsWithC = chord.symbol.startsWith("C");
+    }
+    expectTrue(eighthStartsWithC, "Eighth resolution can capture short C harmony at bar start");
+
+    bool quarterStartsWithG = false;
+    for (const auto& chord : quarterChords)
+    {
+        if (chord.barNumber == 1 && std::abs(chord.quarter) < 1.0e-6)
+            quarterStartsWithG = chord.symbol.startsWith("G");
+    }
+    expectTrue(quarterStartsWithG, "Quarter resolution favors sustained G harmony at bar start");
+}
+
+void testNoDisplayStaffSelectorMapping()
+{
+    juce::ComboBox selector;
+    selector.addItem("No Display", 1);
+    selector.addItem("Track A", 2);
+    selector.addItem("Track B", 3);
+
+    selector.setSelectedItemIndex(0, juce::dontSendNotification);
+    expectTrue(ScoreRebuildService::sourceTrackIndexFromSelector(selector) == -1,
+               "No Display maps to hidden staff index");
+
+    selector.setSelectedItemIndex(1, juce::dontSendNotification);
+    expectTrue(ScoreRebuildService::sourceTrackIndexFromSelector(selector) == 0,
+               "First visible track maps to source index 0");
+
+    selector.setSelectedItemIndex(2, juce::dontSendNotification);
+    expectTrue(ScoreRebuildService::sourceTrackIndexFromSelector(selector) == 1,
+               "Second visible track maps to source index 1");
 }
 
 void testMidiLoaderRejectsType0()
@@ -975,6 +1044,8 @@ int main()
     testQuantizer();
     testDottedDurationQuantization();
     testChordDetector();
+    testChordDetectionResolution();
+    testNoDisplayStaffSelectorMapping();
     testMidiLoaderRejectsType0();
     testMidiLoaderRejectsSmpte();
     testTrackNoteExtractorFlushesOrphans();

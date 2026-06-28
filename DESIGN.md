@@ -117,6 +117,11 @@ Track mix is source-track based (not MIDI-channel strip based):
 
 This separation allows rendering and playback sync to operate on bar-relative notation primitives.
 
+Staff lanes also have a UI-level visibility state from the track selectors:
+
+- `No Display` -> lane is hidden in the Score tab and skipped during PDF lane collection
+- selected track -> lane is rebuilt/rendered normally
+
 ### 3.2 Quantization boundary
 
 Quantization occurs before score construction (`Quantizer` output enters `ScoreModel::build()`).
@@ -208,6 +213,7 @@ The rendered window is a fixed rolling context:
 Score export reuses the existing notation stack rather than building a second renderer:
 
 1. `MainComponent` gathers non-empty staff lanes (`ScoreModel` + `ScoreRenderer` pairs).
+   - lanes marked `No Display` are excluded before pagination.
    - lane collection respects selected export mode:
      - `All active staffs` collects all non-empty lanes
      - `Staff 1 only` collects lane 1 only when non-empty
@@ -519,10 +525,10 @@ Chord analysis does not rely on a single displayed staff track.
 
 ### 4.2 Static chord annotation pass
 
-`ChordDetector::detect()` scans by bars and quarter-note windows:
+`ChordDetector::detect()` scans by bars and resolution-selected windows:
 
 - for each bar in `[1..maxBar]`
-- for each quarter-note window in bar
+- for each detection window in bar (`1.0q` quarter or `0.5q` eighth)
 - call `detectWindow(notes, secA, secB, options)`
 
 Dedup behavior:
@@ -536,8 +542,8 @@ This produces stable, non-redundant chord markers in score space.
 
 During playback (`timerCallback()`):
 
-- recompute at 1/8-note boundaries
-- detect in half-quarter windows (`0.5q`)
+- recompute at the selected chord-grid boundary
+- detect with the same window size used by static chord labels (`1.0q` quarter or `0.5q` eighth)
 - update marker only when symbol or marker position changes
 - clear marker on empty windows
 
@@ -804,17 +810,18 @@ All other suffixes pass through unchanged.
 
 #### 4.7.7 Live detection path and marker-state machine
 
-Live markers use a denser cadence than static labels:
+Live markers and static labels now share one user-selected grid:
 
-- update checkpoint: each 1/8 note (by quantized `eighthIndex`)
-- detection window size: 0.5 quarter notes
+- `Quarter` mode (default): `windowQ = 1.0`
+- `Eighth` mode: `windowQ = 0.5`
 
 Pseudo-code:
 
 ```cpp
-eighthIndex = floor(currentQuarter * 2)
-windowQStart = eighthIndex / 2.0
-windowQEnd = windowQStart + 0.5
+windowQ = windowQuarterLength(selectedResolution)
+windowIndex = floor(currentQuarter / windowQ)
+windowQStart = windowIndex * windowQ
+windowQEnd = windowQStart + windowQ
 symbol = detectInWindow(liveChordNotesByStaff[staff], sec(windowQStart), sec(windowQEnd), namingOptions)
 
 if symbol empty:
@@ -833,10 +840,10 @@ Live marker flow:
 ```mermaid
 flowchart TD
   tick[Timer callback while playing] --> qConv[Convert elapsed seconds to quarter]
-  qConv --> eighthStep[Quantize to eighth index]
-  eighthStep --> repeatCheck{same as last index}
+  qConv --> windowStep[Quantize to selected window index]
+  windowStep --> repeatCheck{same as last index}
   repeatCheck -->|yes| noOp[Skip update]
-  repeatCheck -->|no| windowBuild[Build 0.5q detection window]
+  repeatCheck -->|no| windowBuild[Build selected detection window]
   windowBuild --> detectCall[detectInWindow]
   detectCall --> symbolCheck{symbol empty}
   symbolCheck -->|yes| clearMarker[Clear live marker if visible]
@@ -854,7 +861,7 @@ Let:
 - `R` = 12 roots
 - `T` = template count
 - `B` = bars
-- `Q` = windows per bar (quarter scan for static; denser half-quarter/eighth checkpoints for live)
+- `Q` = windows per bar (`4` in quarter mode, `8` in eighth mode)
 
 Then:
 

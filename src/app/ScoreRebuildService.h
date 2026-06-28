@@ -35,6 +35,7 @@ public:
         std::function<std::vector<MidiNoteEvent>()> collectSharedChordAnalysisNotes;
         std::function<bool()> hasChordTrackSelection;
         std::function<ChordDetector::NamingOptions()> namingOptions;
+        std::function<ChordDetector::DetectionResolution()> chordResolution;
         std::function<void()> resetLiveChordState;
         std::function<void(const juce::String&)> setStatusMessage;
         juce::Label* transportLabel = nullptr;
@@ -59,6 +60,12 @@ public:
         return ScoreRenderer::ClefType::treble;
     }
 
+    // Staff track selectors use index 0 for "No Display", then tracks at 1..N.
+    static int sourceTrackIndexFromSelector(const juce::ComboBox& combo)
+    {
+        return combo.getSelectedItemIndex() - 1;
+    }
+
     static void rebuildStaff(const StaffLane& lane,
                              const Context& ctx,
                              const std::optional<std::vector<ChordAnnotation>>& sharedChordAnnotations = std::nullopt)
@@ -67,7 +74,7 @@ public:
             || lane.model == nullptr || lane.renderer == nullptr || ctx.liveChordNotesByStaff == nullptr)
             return;
 
-        const int index = lane.trackSelector->getSelectedItemIndex();
+        const int index = sourceTrackIndexFromSelector(*lane.trackSelector);
         if (index < 0 || index >= static_cast<int>(ctx.project->tracks.size()))
         {
             ctx.clearStaff(static_cast<int>(lane.staffIndex), *lane.model, *lane.renderer);
@@ -91,12 +98,13 @@ public:
             : std::vector<MidiNoteEvent>();
         (*ctx.liveChordNotesByStaff)[lane.staffIndex] = chordAnalysisNotes;
         const auto namingOptions = ctx.namingOptions ? ctx.namingOptions() : ChordDetector::NamingOptions();
+        const auto chordResolution = ctx.chordResolution ? ctx.chordResolution() : ChordDetector::DetectionResolution::quarter;
 
         std::vector<ChordAnnotation> chords;
         if (sharedChordAnnotations.has_value())
             chords = sharedChordAnnotations.value();
         else
-            chords = ChordDetector::detect(chordAnalysisNotes, ctx.project->tempoMap, ctx.project->maxBar, namingOptions);
+            chords = ChordDetector::detect(chordAnalysisNotes, ctx.project->tempoMap, ctx.project->maxBar, namingOptions, chordResolution);
         lane.model->build(ctx.project->tempoMap, quantized, chords, ctx.project->maxBar);
         lane.renderer->setStaffLabel(track.name);
         lane.renderer->setClefType(clefType);
@@ -137,10 +145,12 @@ public:
         {
             const auto sharedNotes = ctx.collectSharedChordAnalysisNotes();
             const auto namingOptions = ctx.namingOptions ? ctx.namingOptions() : ChordDetector::NamingOptions();
+            const auto chordResolution = ctx.chordResolution ? ctx.chordResolution() : ChordDetector::DetectionResolution::quarter;
             sharedChordAnnotations = ChordDetector::detect(sharedNotes,
                                                            ctx.project->tempoMap,
                                                            ctx.project->maxBar,
-                                                           namingOptions);
+                                                           namingOptions,
+                                                           chordResolution);
         }
 
         for (const auto& lane : lanes)

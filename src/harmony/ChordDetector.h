@@ -11,6 +11,12 @@
 class ChordDetector
 {
 public:
+    enum class DetectionResolution
+    {
+        quarter = 1,
+        eighth = 2
+    };
+
     enum class AccidentalPreference
     {
         preferSharps,
@@ -29,10 +35,16 @@ public:
         JazzAliasStyle jazzAliasStyle = JazzAliasStyle::plain;
     };
 
+    static double windowQuarterLength(DetectionResolution resolution)
+    {
+        return resolution == DetectionResolution::eighth ? 0.5 : 1.0;
+    }
+
     static std::vector<ChordAnnotation> detect(const std::vector<MidiNoteEvent>& notes,
                                                const TempoMap& map,
                                                int maxBar,
-                                               NamingOptions options = {})
+                                               NamingOptions options = {},
+                                               DetectionResolution resolution = DetectionResolution::quarter)
     {
         // ScoreRebuildService caches one detect() result per rebuild when chord-track
         // selection is active, so this scan is not repeated for every staff lane.
@@ -41,6 +53,7 @@ public:
             return out;
 
         const int barCount = juce::jmax(1, maxBar);
+        const double windowQuarter = windowQuarterLength(resolution);
         juce::String previousSymbol;
 
         for (int bar = 1; bar <= barCount; ++bar)
@@ -48,10 +61,10 @@ public:
             previousSymbol.clear();
             const auto barQ = map.barToQuarterDownbeat(bar);
             const auto nextBarQ = map.barToQuarterDownbeat(bar + 1);
-            for (double q = barQ; q < nextBarQ - 1.0e-6; q += 1.0)
+            for (double q = barQ; q < nextBarQ - 1.0e-6; q += windowQuarter)
             {
                 const auto secA = map.tickToSeconds(map.quarterToTick(q));
-                const auto secB = map.tickToSeconds(map.quarterToTick(q + 1.0));
+                const auto secB = map.tickToSeconds(map.quarterToTick(q + windowQuarter));
                 const auto symbol = detectWindow(notes, secA, secB, options);
                 if (symbol.isEmpty())
                 {

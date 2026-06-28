@@ -53,6 +53,8 @@ For changes in:
 - `src/notation/ScoreModel.h`: add or adjust gap/rest insertion behavior checks.
 - `src/harmony/ChordDetector.h`: add chord match and naming-option checks.
 - `src/app/MainComponent.h`: include manual playback smoke coverage for timer/live marker behavior.
+  - include both `Quarter` and `Eighth` chord-grid checks for static labels/live marker windows.
+  - include `No Display` lane-hiding checks for Staff 1/2/3.
 - `src/notation/ScoreRenderer.h`: include manual rendering checks for clef-specific key signature positioning.
 - `src/notation/ScoreRenderer.h`: include manual checks for drum note placement/noteheads, open vs filled noteheads, augmentation dots, and per-staff header text.
 
@@ -73,10 +75,15 @@ At minimum before submitting:
    - verify enlarged clef/key-signature symbols do not overlap notes in first visible bar
    - verify top-right staff header text follows selected track/instrument names
    - verify Drum clef mode renders percussion track notes with expected vertical placement
+   - verify `No Display` hides selected staff lanes and remaining lanes expand to fill space
    - verify rolling bar playback updates
-   - verify live chord marker changes only when chord changes
+   - verify live chord marker changes only when chord text or marker position changes
+   - verify `Chord grid` quarter/eighth selection updates both static labels and live marker behavior
+   - verify `Chord grid` selection is restored after Save Preset + Load Preset
    - verify Stop pre-fills Continue bar and Continue resumes correctly
    - verify Save/Load Preset on Score row 1 and Save Preset red dirty indicator
+   - verify `No Display` selections round-trip via Save Preset / Load Preset
+   - verify `No Display` lanes are excluded from PDF export lane output
    - verify Effects tab Chan/Mute/Solo/Volume/Reverb controls; Chan seeds from track channel (default 1); volume/reverb CC-seeded defaults (100/10)
 
 ## PR checklist

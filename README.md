@@ -14,6 +14,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Auto-load last saved UI preset when a MIDI file is loaded (if present).
 - Display up to three independent staffs:
   - per-staff track selection
+  - per-staff `No Display` option to hide a lane
   - per-staff clef selection (`Treble` / `Bass` / `Drum`)
 - Build tempo, time-signature, and key-signature maps from MIDI meta events.
 - Quantize note starts and durations to:
@@ -30,7 +31,8 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
   - explicit rest symbols (gaps are modeled and rendered as rests)
 - Detect/display chords:
   - static bar chord label (left-aligned)
-  - live chord marker recomputed on 1/8-note boundaries, shown only when chord changes
+  - configurable chord detection grid (`Quarter` or `Eighth`) used for both static labels and live marker windows
+  - live chord marker shown only when chord text or marker position changes
 - Chord source selection:
   - dynamic per-track checkbox list (`Chord Tracks`) used for harmonic analysis
 - Playback controls (Score tab):
@@ -56,7 +58,8 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
   - transpose per song under `transposeOverridesBySong`
   - key override per song under `keyOverridesBySong`
   - tempo override per song under `tempoOverridesBySong` (scales playback uniformly against the file's opening tempo; later tempo changes keep their relative ratios)
-  - staff/chord-track/accidental/alias selections and other score UI state per song
+  - chord detection resolution per song under `chordResolutionBySong` (`Quarter` default)
+  - staff/chord-track/accidental/alias selections (including `No Display`) and other score UI state per song
 - Non-destructive workflow:
   - loaded MIDI files are treated as source material and are not rewritten by the app
   - user edits are persisted in profile data and can be reloaded with **Load Preset**
@@ -77,7 +80,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
 - Score tab UI layout (row summary):
   - row 1: Load MIDI, Start/Stop, Continue, Bar, accidental/alias, Save/Load Preset, Recent MIDI, Open Recent, Chord Tracks label
   - row 2: staff track/display-octave/clef selectors, then PDF mode, Export PDF, Light Score
-  - row 3: Chord Tracks checkboxes
+  - row 3: Chord Grid controls + Chord Tracks checkboxes
   - row 4: Tempo, Key, Transpose, status line
 - Window title includes loaded MIDI filename.
 
@@ -164,6 +167,7 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 - Quantization is limited to 1/16 through whole-note values, including single augmentation dots (not triplets or double dots).
 - Rests, beaming, and accidental handling are practical approximations, not full engraving rules.
 - Chord detection uses deterministic template scoring and may be ambiguous for dense voicings.
+- Chord detection grid is selectable (`Quarter` default, `Eighth` optional) and can still be ambiguous for dense voicings.
 - Playback drives visual sync and optional MIDI output from one shared timeline.
 - Output is intentionally limited to a single GM-oriented MIDI destination.
 - Profile save/load is the supported way to keep or revert edits; the app does not rewrite source MIDI files.
@@ -183,11 +187,13 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
   - `src/midi/TempoMap.h` is the authoritative timing layer.
 - `Chord detection`
   - `src/harmony/ChordDetector.h` contains template matching and naming rules.
-  - `detectInWindow(...)` supports live playback window detection.
+  - `detect(...)` and `detectInWindow(...)` support quarter/eighth detection windows.
 - `Notation model`
   - `src/notation/ScoreModel.h` inserts explicit rest symbols per bar by gap-filling occupied note spans.
 - `Notation rendering`
   - `src/notation/ScoreRenderer.h` handles static chord labels, live chord marker, notes/rests (open vs filled noteheads, augmentation dots), per-staff instrument header labels, first-visible-bar clef/key symbols, and drum-mode note rendering.
+- `Staff lane visibility`
+  - `No Display` hides a selected staff lane in Score view and excludes it from PDF lane export selection.
 - `UI orchestration`
   - `src/app/MainComponent.h` coordinates all preferences, preset load/save, multi-staff rebuilds, and timer-based updates.
 

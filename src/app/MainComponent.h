@@ -142,6 +142,21 @@ public:
         aliasSelector.setSelectedId(1, juce::dontSendNotification);
         aliasSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
 
+        addAndMakeVisible(chordResolutionLabel);
+        chordResolutionLabel.setText("Chord Grid", juce::dontSendNotification);
+        chordResolutionLabel.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(chordResolutionSelector);
+        chordResolutionSelector.addItem("1/4", static_cast<int>(ChordDetector::DetectionResolution::quarter));
+        chordResolutionSelector.addItem("1/8", static_cast<int>(ChordDetector::DetectionResolution::eighth));
+        chordResolutionSelector.setSelectedId(static_cast<int>(ChordDetector::DetectionResolution::quarter), juce::dontSendNotification);
+        chordResolutionSelector.setTooltip("Choose chord detection grid size. Quarter is steadier for passing tones; eighth is more reactive.");
+        chordResolutionSelector.onChange = [this]
+        {
+            resetLiveChordState();
+            rebuildAllStaffs();
+            refreshSavePresetButtonDirtyStyle();
+        };
+
         addAndMakeVisible(chordTracksLabel);
         chordTracksLabel.setText("Chord Tracks", juce::dontSendNotification);
         chordTracksLabel.setJustificationType(juce::Justification::centredLeft);
@@ -212,14 +227,14 @@ public:
         loopEndInput.onReturnKey = [this] { applyLoopBoundsFromInputs(); };
         loopEndInput.onFocusLost = [this] { applyLoopBoundsFromInputs(); };
 
-        addAndMakeVisible(recentFilesSelector);
-        recentFilesSelector.addItem("(Recent MIDI)", 1);
-        recentFilesSelector.setSelectedId(1, juce::dontSendNotification);
-        recentFilesSelector.onChange = [this] { onRecentSelectionChanged(); };
-
         addAndMakeVisible(openRecentButton);
-        openRecentButton.setButtonText("Open Recent");
-        openRecentButton.onClick = [this] { openSelectedRecentFile(); };
+        openRecentButton.setButtonText("Load Recent");
+        openRecentButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+        openRecentButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+        openRecentButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff8aa3b6));
+        openRecentButton.setColour(juce::TextButton::buttonOnColourId,
+                                   juce::Colour(0xff8aa3b6).interpolatedWith(juce::Colours::black, 0.10f));
+        openRecentButton.onClick = [this] { openRecentFileList(); };
 
         addAndMakeVisible(savePresetButton);
         savePresetButton.setButtonText("Save Preset");
@@ -231,7 +246,7 @@ public:
         loadPresetButton.onClick = [this] { (void) loadUiPreset(); };
 
         addAndMakeVisible(exportPdfButton);
-        exportPdfButton.setButtonText("Export PDF...");
+        exportPdfButton.setButtonText("Export PDF");
         exportPdfButton.onClick = [this] { exportScorePdf(); };
 
         addAndMakeVisible(exportPdfModeSelector);
@@ -318,7 +333,7 @@ public:
         loadLastMidiDirectoryFromPreset();
         loadRecentFilesFromPreset();
         loadStartupSettingsFromPreset();
-        refreshRecentFilesSelector();
+        refreshRecentFilesButtonState();
         loadSelectedMidiOutputFromConfig();
 
         updateTransportControls();
@@ -348,8 +363,7 @@ public:
         aliasSelector.setBounds(row.removeFromLeft(136).reduced(4, 0));
         savePresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
         loadPresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
-        recentFilesSelector.setBounds(row.removeFromLeft(210).reduced(4, 0));
-        openRecentButton.setBounds(row.removeFromLeft(94).reduced(4, 0));
+        openRecentButton.setBounds(row.removeFromLeft(126).reduced(4, 0));
         chordTracksLabel.setBounds(row);
 
         area.removeFromTop(6);
@@ -367,9 +381,9 @@ public:
         staff2TrackLabel.setBounds(staff2TrackLabel.getBounds().translated(6, 0));
         staff3TrackLabel.setBounds(staff3TrackLabel.getBounds().translated(6, 0));
         selectorRow.removeFromLeft(juce::jmin(6, selectorRow.getWidth()));
-        exportPdfModeSelector.setBounds(selectorRow.removeFromLeft(juce::jmin(72, selectorRow.getWidth())).reduced(4, 0));
-        selectorRow.removeFromLeft(juce::jmin(4, selectorRow.getWidth()));
         exportPdfButton.setBounds(selectorRow.removeFromLeft(juce::jmin(108, selectorRow.getWidth())).reduced(4, 0));
+        selectorRow.removeFromLeft(juce::jmin(4, selectorRow.getWidth()));
+        exportPdfModeSelector.setBounds(selectorRow.removeFromLeft(juce::jmin(72, selectorRow.getWidth())).reduced(4, 0));
         selectorRow.removeFromLeft(juce::jmin(4, selectorRow.getWidth()));
         scoreColorToggle.setBounds(selectorRow.removeFromLeft(juce::jmin(110, selectorRow.getWidth())).reduced(4, 0));
 
@@ -390,17 +404,50 @@ public:
         transposeHelpButton.setBounds(statusRow.removeFromLeft(28).reduced(4, 0));
         statusLabel.setBounds(statusRow);
         area.removeFromTop(8);
+        const bool showStaff1 = isStaffDisplayed(staff1TrackSelector);
+        const bool showStaff2 = isStaffDisplayed(staff2TrackSelector);
+        const bool showStaff3 = isStaffDisplayed(staff3TrackSelector);
+        scoreRenderer.setVisible(showStaff1);
+        scoreRenderer2.setVisible(showStaff2);
+        scoreRenderer3.setVisible(showStaff3);
+
+        std::vector<ScoreRenderer*> activeRenderers;
+        activeRenderers.reserve(3);
+        if (showStaff1)
+            activeRenderers.push_back(&scoreRenderer);
+        if (showStaff2)
+            activeRenderers.push_back(&scoreRenderer2);
+        if (showStaff3)
+            activeRenderers.push_back(&scoreRenderer3);
+
+        if (activeRenderers.empty())
+        {
+            scoreRenderer.setBounds(juce::Rectangle<int>());
+            scoreRenderer2.setBounds(juce::Rectangle<int>());
+            scoreRenderer3.setBounds(juce::Rectangle<int>());
+            return;
+        }
 
         const int laneGap = 4;
-        auto lane1 = area.removeFromTop((area.getHeight() - laneGap * 2) / 3);
-        area.removeFromTop(laneGap);
-        auto lane2 = area.removeFromTop((area.getHeight() - laneGap) / 2);
-        area.removeFromTop(laneGap);
-        auto lane3 = area;
+        const int laneCount = static_cast<int>(activeRenderers.size());
+        const int totalGap = laneGap * juce::jmax(0, laneCount - 1);
+        const int dynamicLaneHeight = juce::jmax(1, (area.getHeight() - totalGap) / laneCount);
+        const int twoStaffHeight = juce::jmax(1, (area.getHeight() - laneGap) / 2);
+        const int laneHeight = juce::jmin(dynamicLaneHeight, twoStaffHeight);
+        const int usedHeight = laneHeight * laneCount + totalGap;
+        int y = area.getY() + juce::jmax(0, (area.getHeight() - usedHeight) / 2);
+        for (int i = 0; i < laneCount; ++i)
+        {
+            activeRenderers[(size_t) i]->setBounds(area.getX(), y, area.getWidth(), laneHeight);
+            y += laneHeight + laneGap;
+        }
 
-        scoreRenderer.setBounds(lane1);
-        scoreRenderer2.setBounds(lane2);
-        scoreRenderer3.setBounds(lane3);
+        if (!showStaff1)
+            scoreRenderer.setBounds(juce::Rectangle<int>());
+        if (!showStaff2)
+            scoreRenderer2.setBounds(juce::Rectangle<int>());
+        if (!showStaff3)
+            scoreRenderer3.setBounds(juce::Rectangle<int>());
     }
 
     bool hasLoadedProject() const
@@ -652,7 +699,7 @@ public:
 private:
     struct LiveChordState
     {
-        int lastEighthIndex = std::numeric_limits<int>::min();
+        int lastWindowIndex = std::numeric_limits<int>::min();
         juce::String lastDisplayedChord;
         bool hasMarker = false;
         int markerBar = 1;
@@ -675,6 +722,7 @@ private:
         juce::String chordTrackSelectionCsv;
         int accidentalSelection = 1;
         int aliasSelection = 1;
+        int chordResolutionSelection = static_cast<int>(ChordDetector::DetectionResolution::quarter);
         int transposeSemitones = 0;
         juce::String keyOverrideText;
         juce::String tempoOverrideText;
@@ -689,6 +737,7 @@ private:
                 && chordTrackSelectionCsv == other.chordTrackSelectionCsv
                 && accidentalSelection == other.accidentalSelection
                 && aliasSelection == other.aliasSelection
+                && chordResolutionSelection == other.chordResolutionSelection
                 && transposeSemitones == other.transposeSemitones
                 && keyOverrideText == other.keyOverrideText
                 && tempoOverrideText == other.tempoOverrideText
@@ -708,6 +757,21 @@ private:
         return selectedId == static_cast<int>(PdfExportMode::staff1Only)
             ? PdfExportMode::staff1Only
             : PdfExportMode::allActiveStaffs;
+    }
+
+    static int normalizeChordResolutionSelectorId(int selectedId)
+    {
+        return juce::jlimit(static_cast<int>(ChordDetector::DetectionResolution::quarter),
+                            static_cast<int>(ChordDetector::DetectionResolution::eighth),
+                            selectedId);
+    }
+
+    ChordDetector::DetectionResolution getChordDetectionResolution() const
+    {
+        const int normalized = normalizeChordResolutionSelectorId(chordResolutionSelector.getSelectedId());
+        return normalized == static_cast<int>(ChordDetector::DetectionResolution::eighth)
+            ? ChordDetector::DetectionResolution::eighth
+            : ChordDetector::DetectionResolution::quarter;
     }
 
     static int normalizeStaffDisplayOctaveSelectorId(int selectedId)
@@ -987,6 +1051,12 @@ private:
         clefSelector.setBounds(area.removeFromRight(82));
     }
 
+    static bool isStaffDisplayed(const juce::ComboBox& trackSelector)
+    {
+        // Selector index 0 is "No Display".
+        return trackSelector.getSelectedItemIndex() > 0;
+    }
+
     ScoreSongSettingsSnapshot buildCurrentScoreSongSettingsSnapshot() const
     {
         ScoreSongSettingsSnapshot snapshot;
@@ -1002,6 +1072,7 @@ private:
         snapshot.chordTrackSelectionCsv = buildChordTrackSelectionCsv();
         snapshot.accidentalSelection = accidentalSelector.getSelectedId();
         snapshot.aliasSelection = aliasSelector.getSelectedId();
+        snapshot.chordResolutionSelection = normalizeChordResolutionSelectorId(chordResolutionSelector.getSelectedId());
         snapshot.transposeSemitones = getClampedTranspose(globalTransposeInput);
         snapshot.keyOverrideText = keyOverride.has_value() ? keyOverride->displayText : juce::String();
         snapshot.tempoOverrideText = tempoOverrideInput.getText().trim();
@@ -1106,11 +1177,11 @@ private:
 
     int getChordTracksLayoutHeight(int availableWidth) const
     {
-        const int labelWidth = 110;
+        const int leadingWidth = 256;
         const int xPadding = 6;
         const int yPadding = 4;
         const int rowHeight = 22;
-        const int usableWidth = juce::jmax(120, availableWidth - labelWidth - xPadding * 2);
+        const int usableWidth = juce::jmax(120, availableWidth - leadingWidth - xPadding * 2);
 
         int rows = 1;
         int rowX = 0;
@@ -1131,8 +1202,9 @@ private:
 
     void layoutChordTrackButtons(juce::Rectangle<int> area)
     {
-        auto labelArea = area.removeFromLeft(110);
-        chordTracksLabel.setBounds(labelArea);
+        chordResolutionLabel.setBounds(area.removeFromLeft(82));
+        chordResolutionSelector.setBounds(area.removeFromLeft(70).reduced(4, 0));
+        chordTracksLabel.setBounds(area.removeFromLeft(104));
 
         const int xPadding = 6;
         const int rowHeight = 22;
@@ -1379,45 +1451,49 @@ private:
         recentMidiFiles.insert(recentMidiFiles.begin(), normalized);
         if (recentMidiFiles.size() > 10)
             recentMidiFiles.resize(10);
-        refreshRecentFilesSelector();
+        refreshRecentFilesButtonState();
         saveRecentFilesToPreset();
     }
 
-    void refreshRecentFilesSelector()
+    void refreshRecentFilesButtonState()
     {
-        recentFilesSelector.clear(juce::dontSendNotification);
-        recentFilesSelector.addItem("(Recent MIDI)", 1);
+        openRecentButton.setEnabled(!recentMidiFiles.empty());
+    }
+
+    void openRecentFileList()
+    {
+        if (recentMidiFiles.empty())
+            return;
+
+        juce::PopupMenu recentMenu;
         for (int i = 0; i < static_cast<int>(recentMidiFiles.size()); ++i)
         {
             const juce::File file(recentMidiFiles[(size_t) i]);
             const auto parentName = file.getParentDirectory().getFileName();
-            const auto label = parentName.isNotEmpty()
+            const auto fileLabel = parentName.isNotEmpty()
                 ? (file.getFileName() + "  [" + parentName + "]")
                 : file.getFileName();
-            recentFilesSelector.addItem(label, i + 2);
+            recentMenu.addItem(i + 1, fileLabel);
         }
-        recentFilesSelector.setSelectedId(recentMidiFiles.empty() ? 1 : 2, juce::dontSendNotification);
-        openRecentButton.setEnabled(!recentMidiFiles.empty());
-    }
-
-    void onRecentSelectionChanged()
-    {
-        // Selection is consumed by Open Recent button to avoid accidental loads.
-    }
-
-    void openSelectedRecentFile()
-    {
-        const int id = recentFilesSelector.getSelectedId();
-        const int index = id < 2 ? 0 : (id - 2);
-        if (index < 0 || index >= static_cast<int>(recentMidiFiles.size()))
-            return;
-        const juce::File file(recentMidiFiles[(size_t) index]);
-        if (!file.existsAsFile())
+        juce::Component::SafePointer<MainComponent> safeThis(this);
+        recentMenu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&openRecentButton),
+                                 juce::ModalCallbackFunction::create([safeThis](int result)
         {
-            setStatusMessage("Recent file missing: " + file.getFullPathName());
-            return;
-        }
-        loadMidiFileFromPath(file);
+            if (safeThis == nullptr || result <= 0)
+                return;
+
+            const int index = result - 1;
+            if (index < 0 || index >= static_cast<int>(safeThis->recentMidiFiles.size()))
+                return;
+
+            const juce::File file(safeThis->recentMidiFiles[(size_t) index]);
+            if (!file.existsAsFile())
+            {
+                safeThis->setStatusMessage("Recent file missing: " + file.getFullPathName());
+                return;
+            }
+            safeThis->loadMidiFileFromPath(file);
+        }));
     }
 
     void loadRecentFilesFromPreset()
@@ -1446,6 +1522,7 @@ private:
             if (recentMidiFiles.size() >= 10)
                 break;
         }
+        refreshRecentFilesButtonState();
     }
 
     void saveRecentFilesToPreset()
@@ -1684,6 +1761,23 @@ private:
         return juce::jlimit(1, 2, static_cast<int>(bySongObj->getProperty(songId)));
     }
 
+    std::optional<int> getSongChordResolutionFromPreset(const juce::DynamicObject& preset) const
+    {
+        const auto songKey = getSongPresetKey();
+        if (songKey.isEmpty() || !preset.hasProperty("chordResolutionBySong"))
+            return std::nullopt;
+
+        auto* bySongObj = preset.getProperty("chordResolutionBySong").getDynamicObject();
+        if (bySongObj == nullptr)
+            return std::nullopt;
+
+        const juce::Identifier songId(songKey);
+        if (!bySongObj->hasProperty(songId))
+            return std::nullopt;
+
+        return normalizeChordResolutionSelectorId(static_cast<int>(bySongObj->getProperty(songId)));
+    }
+
     void applyTrackMixFromPreset(const juce::DynamicObject& preset)
     {
         initializeTrackMixFromMidi();
@@ -1762,6 +1856,7 @@ private:
         obj->setProperty("staff1Track", staff1TrackSelector.getSelectedItemIndex());
         obj->setProperty("staff2Track", staff2TrackSelector.getSelectedItemIndex());
         obj->setProperty("staff3Track", staff3TrackSelector.getSelectedItemIndex());
+        obj->setProperty("staffTrackSelectionVersion", 2);
         obj->setProperty("staff1Clef", staff1ClefSelector.getSelectedId());
         obj->setProperty("staff2Clef", staff2ClefSelector.getSelectedId());
         obj->setProperty("staff3Clef", staff3ClefSelector.getSelectedId());
@@ -1771,6 +1866,7 @@ private:
         obj->setProperty("chordTrackSelection", buildChordTrackSelectionCsv());
         obj->setProperty("accidental", accidentalSelector.getSelectedId());
         obj->setProperty("alias", aliasSelector.getSelectedId());
+        obj->setProperty("chordResolution", normalizeChordResolutionSelectorId(chordResolutionSelector.getSelectedId()));
         obj->setProperty("scoreLightMode", scoreColorToggle.getToggleState());
         obj->setProperty("pdfExportMode", exportPdfModeSelector.getSelectedId());
         obj->setProperty("tempoOverrideEnabled", tempoOverrideBpm.has_value());
@@ -1792,6 +1888,7 @@ private:
         auto chordTrackSelectionBySong = std::make_unique<juce::DynamicObject>();
         auto accidentalBySong = std::make_unique<juce::DynamicObject>();
         auto aliasBySong = std::make_unique<juce::DynamicObject>();
+        auto chordResolutionBySong = std::make_unique<juce::DynamicObject>();
         auto transposeOverridesBySong = std::make_unique<juce::DynamicObject>();
         auto keyOverridesBySong = std::make_unique<juce::DynamicObject>();
         auto tempoOverridesBySong = std::make_unique<juce::DynamicObject>();
@@ -1833,6 +1930,13 @@ private:
                     {
                         for (const auto& prop : existingAliasObj->getProperties())
                             aliasBySong->setProperty(prop.name, prop.value);
+                    }
+
+                    const auto existingChordResolutionVar = existingObj->getProperty("chordResolutionBySong");
+                    if (auto* existingChordResolutionObj = existingChordResolutionVar.getDynamicObject())
+                    {
+                        for (const auto& prop : existingChordResolutionObj->getProperties())
+                            chordResolutionBySong->setProperty(prop.name, prop.value);
                     }
 
                     const auto existingTransposeVar = existingObj->getProperty("transposeOverridesBySong");
@@ -1885,6 +1989,7 @@ private:
             chordTrackSelectionBySong->setProperty(songId, buildChordTrackSelectionCsv());
             accidentalBySong->setProperty(songId, accidentalSelector.getSelectedId());
             aliasBySong->setProperty(songId, aliasSelector.getSelectedId());
+            chordResolutionBySong->setProperty(songId, normalizeChordResolutionSelectorId(chordResolutionSelector.getSelectedId()));
 
             const int songTranspose = getGlobalTransposeSemitones(true);
             if (songTranspose != 0)
@@ -1914,6 +2019,7 @@ private:
         obj->setProperty("chordTrackSelectionBySong", juce::var(chordTrackSelectionBySong.release()));
         obj->setProperty("accidentalBySong", juce::var(accidentalBySong.release()));
         obj->setProperty("aliasBySong", juce::var(aliasBySong.release()));
+        obj->setProperty("chordResolutionBySong", juce::var(chordResolutionBySong.release()));
         obj->setProperty("transposeOverridesBySong", juce::var(transposeOverridesBySong.release()));
         obj->setProperty("keyOverridesBySong", juce::var(keyOverridesBySong.release()));
         obj->setProperty("tempoOverridesBySong", juce::var(tempoOverridesBySong.release()));
@@ -1972,9 +2078,18 @@ private:
             return static_cast<int>(obj->getProperty(key));
         };
 
-        auto applyTrackSelection = [this](juce::ComboBox& box, int idx)
+        const int staffTrackSelectionVersion = getIntProperty("staffTrackSelectionVersion", 1);
+        auto normalizeStoredStaffSelection = [staffTrackSelectionVersion](int storedSelection) -> int
         {
-            const int clamped = juce::jlimit(0, juce::jmax(0, box.getNumItems() - 1), idx);
+            if (staffTrackSelectionVersion < 2 && storedSelection >= 0)
+                return storedSelection + 1;
+            return storedSelection;
+        };
+
+        auto applyTrackSelection = [this, &normalizeStoredStaffSelection](juce::ComboBox& box, int idx)
+        {
+            const int normalized = normalizeStoredStaffSelection(idx);
+            const int clamped = juce::jlimit(0, juce::jmax(0, box.getNumItems() - 1), normalized);
             if (box.getNumItems() > 0)
                 box.setSelectedItemIndex(clamped, juce::dontSendNotification);
         };
@@ -2063,6 +2178,22 @@ private:
                 && obj->getProperty("aliasBySong").getDynamicObject() != nullptr;
             aliasSelector.setSelectedId(
                 hasSongAliasMap ? 1 : juce::jlimit(1, 2, getIntProperty("alias", 1)),
+                juce::dontSendNotification);
+        }
+        const auto songChordResolutionSelection = getSongChordResolutionFromPreset(*obj);
+        if (songChordResolutionSelection.has_value())
+        {
+            chordResolutionSelector.setSelectedId(songChordResolutionSelection.value(), juce::dontSendNotification);
+        }
+        else
+        {
+            const bool hasSongChordResolutionMap = obj->hasProperty("chordResolutionBySong")
+                && obj->getProperty("chordResolutionBySong").getDynamicObject() != nullptr;
+            chordResolutionSelector.setSelectedId(
+                hasSongChordResolutionMap
+                    ? static_cast<int>(ChordDetector::DetectionResolution::quarter)
+                    : normalizeChordResolutionSelectorId(
+                          getIntProperty("chordResolution", static_cast<int>(ChordDetector::DetectionResolution::quarter))),
                 juce::dontSendNotification);
         }
         exportPdfModeSelector.setSelectedId(
@@ -2260,19 +2391,21 @@ private:
         if (!project.tracks.empty())
         {
             const auto namingOptions = getChordNamingOptions();
+            const auto resolution = getChordDetectionResolution();
+            const double windowQuarterLength = ChordDetector::windowQuarterLength(resolution);
             const double quarter = project.tempoMap.secondsToQuarter(elapsedSec);
-            const int eighthIndex = static_cast<int>(std::floor(quarter * 2.0 + 1.0e-6));
-            const double windowQuarterStart = static_cast<double>(eighthIndex) / 2.0;
-            const double windowQuarterEnd = windowQuarterStart + 0.5;
+            const int windowIndex = static_cast<int>(std::floor((quarter / windowQuarterLength) + 1.0e-6));
+            const double windowQuarterStart = static_cast<double>(windowIndex) * windowQuarterLength;
+            const double windowQuarterEnd = windowQuarterStart + windowQuarterLength;
             const double windowSecStart = project.tempoMap.tickToSeconds(project.tempoMap.quarterToTick(windowQuarterStart));
             const double windowSecEnd = project.tempoMap.tickToSeconds(project.tempoMap.quarterToTick(windowQuarterEnd));
 
             auto updateLiveChordForStaff = [&](int staffIndex, ScoreRenderer& renderer)
             {
                 auto& state = liveChordStates[(size_t) staffIndex];
-                if (state.lastEighthIndex == eighthIndex)
+                if (state.lastWindowIndex == windowIndex)
                     return;
-                state.lastEighthIndex = eighthIndex;
+                state.lastWindowIndex = windowIndex;
 
                 const auto& notes = liveChordNotesByStaff[(size_t) staffIndex];
                 const auto chord = ChordDetector::detectInWindow(notes, windowSecStart, windowSecEnd, namingOptions);
@@ -2329,21 +2462,24 @@ private:
 
     std::vector<ScorePdfExporter::StaffExportLane> buildScoreExportLanes(PdfExportMode mode) const
     {
+        const bool showStaff1 = isStaffDisplayed(staff1TrackSelector);
+        const bool showStaff2 = isStaffDisplayed(staff2TrackSelector);
+        const bool showStaff3 = isStaffDisplayed(staff3TrackSelector);
         std::vector<ScorePdfExporter::StaffExportLane> lanes;
         if (mode == PdfExportMode::staff1Only)
         {
             lanes.reserve(1);
-            if (!scoreModel1.empty())
+            if (showStaff1 && !scoreModel1.empty())
                 lanes.push_back({ &scoreModel1, &scoreRenderer });
             return lanes;
         }
 
         lanes.reserve(3);
-        if (!scoreModel1.empty())
+        if (showStaff1 && !scoreModel1.empty())
             lanes.push_back({ &scoreModel1, &scoreRenderer });
-        if (!scoreModel2.empty())
+        if (showStaff2 && !scoreModel2.empty())
             lanes.push_back({ &scoreModel2, &scoreRenderer2 });
-        if (!scoreModel3.empty())
+        if (showStaff3 && !scoreModel3.empty())
             lanes.push_back({ &scoreModel3, &scoreRenderer3 });
 
         return lanes;
@@ -2426,7 +2562,10 @@ private:
         staff1TrackSelector.clear(juce::dontSendNotification);
         staff2TrackSelector.clear(juce::dontSendNotification);
         staff3TrackSelector.clear(juce::dontSendNotification);
-        int itemId = 1;
+        staff1TrackSelector.addItem("No Display", 1);
+        staff2TrackSelector.addItem("No Display", 1);
+        staff3TrackSelector.addItem("No Display", 1);
+        int itemId = 2;
         for (const auto& track : project.tracks)
         {
             staff1TrackSelector.addItem(track.name, itemId);
@@ -2442,9 +2581,9 @@ private:
         if (trackCount <= 0)
             return;
 
-        staff1TrackSelector.setSelectedItemIndex(0, juce::dontSendNotification);
-        staff2TrackSelector.setSelectedItemIndex(juce::jmin(1, trackCount - 1), juce::dontSendNotification);
-        staff3TrackSelector.setSelectedItemIndex(juce::jmin(2, trackCount - 1), juce::dontSendNotification);
+        staff1TrackSelector.setSelectedItemIndex(1, juce::dontSendNotification);
+        staff2TrackSelector.setSelectedItemIndex(juce::jmin(2, trackCount), juce::dontSendNotification);
+        staff3TrackSelector.setSelectedItemIndex(juce::jmin(3, trackCount), juce::dontSendNotification);
     }
 
     void clearStaff(ScoreModel& model, ScoreRenderer& renderer)
@@ -2498,6 +2637,7 @@ private:
         ctx.collectSharedChordAnalysisNotes = [this]() { return collectSharedChordAnalysisNotes(); };
         ctx.hasChordTrackSelection = [this]() { return hasChordTrackSelection(); };
         ctx.namingOptions = [this]() { return getChordNamingOptions(); };
+        ctx.chordResolution = [this]() { return getChordDetectionResolution(); };
         ctx.resetLiveChordState = [this]() { resetLiveChordState(); };
         ctx.setStatusMessage = [this](const juce::String& message) { setStatusMessage(message); };
         ctx.transportLabel = &transportLabel;
@@ -2527,6 +2667,7 @@ private:
     {
         auto ctx = buildScoreRebuildContext();
         ScoreRebuildService::rebuildAllStaffs(ctx, buildScoreRebuildLanes());
+        resized();
     }
 
     void applyScoreColorScheme()
@@ -2729,6 +2870,8 @@ private:
     juce::ComboBox accidentalSelector;
     juce::TextButton accidentalHelpButton;
     juce::ComboBox aliasSelector;
+    juce::Label chordResolutionLabel;
+    juce::ComboBox chordResolutionSelector;
     juce::Label chordTracksLabel;
     juce::OwnedArray<juce::ToggleButton> chordTrackButtons;
     juce::Array<int> chordTrackSourceIndices;
@@ -2748,7 +2891,6 @@ private:
     juce::TextButton loadPresetButton;
     juce::ComboBox exportPdfModeSelector;
     juce::TextButton exportPdfButton;
-    juce::ComboBox recentFilesSelector;
     juce::TextButton openRecentButton;
     juce::Label statusLabel;
     juce::Label tempoOverrideLabel;
