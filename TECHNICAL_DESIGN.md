@@ -219,6 +219,275 @@ This keeps export non-destructive and consistent with on-screen notation behavio
 The selected export mode is persisted in the preset payload (`pdfExportMode`) and restored on load.
 Per-staff display octave selections are also persisted (`staff1DisplayOctave`, `staff2DisplayOctave`, `staff3DisplayOctave`) and reflected in PDF output because export uses the live `ScoreRenderer` state.
 
+### 3.9 Staff notation engine deep dive (pseudo-code level)
+
+This subsection reverse-engineers the concrete notation pipeline from the code in:
+
+- `src/app/ScoreRebuildService.h`
+- `src/notation/Quantizer.h`
+- `src/notation/ScoreModel.h`
+- `src/notation/ScoreRenderer.h`
+
+Notation pipeline overview:
+
+```mermaid
+flowchart LR
+  trackSelection[Track selection per staff lane] --> transposeStep[Apply effective transpose\nexcept drum clef]
+  transposeStep --> quantizeStep[Quantizer\nsixteenth grid + duration buckets]
+  quantizeStep --> modelBuild[ScoreModel::build\nbars symbols ties rests]
+  modelBuild --> rendererState[ScoreRenderer state\nclef key signature display octave]
+  rendererState --> uiRender[UI paint\nrolling 5 bar window]
+  rendererState --> pdfRender[PDF paintBarStrip\nfull-song pagination]
+
+  chordInput[Chord analysis notes] --> chordDetect[ChordDetector]
+  chordDetect --> modelBuild
+```
+
+#### 3.9.1 Rebuild pipeline per staff lane
+
+Each staff lane runs an explicit rebuild path that keeps notation state deterministic and independent from playback output-device behavior.
+
+Pseudo-code:
+
+```cpp
+for lane in [staff1, staff2, staff3]:
+    idx = lane.trackSelector.selectedItemIndex
+    if idx invalid:
+        clearStaff(lane.model, lane.renderer)
+        liveChordNotesByStaff[lane].clear()
+        continue
+
+    track = project.tracks[idx]
+    notes = copy(track.notes)
+    clef = clefTypeFromCombo(lane.clefSelector) // treble | bass | drum
+
+    // Transpose for notation/chord-analysis context, but never for drum clef
+    semitones = effectiveTransposeForTrack(idx)
+    if semitones != 0 and clef != drum:
+        for n in notes:
+            n.noteNumber = clamp(0, 127, n.noteNumber + semitones)
+
+    quantized = Quantizer::quantizeTrack(notes, tempoMap)
+    chordNotes = collectChordAnalysisNotes(idx) // or shared notes path
+    chords = ChordDetector::detect(chordNotes, tempoMap, maxBar, namingOptions)
+
+    lane.model.build(tempoMap, quantized, chords, maxBar)
+    lane.renderer.setStaffLabel(track.name)
+    lane.renderer.setClefType(clef)
+    lane.renderer.setCurrentBar(playbackController.currentBar)
+```
+
+Design implications:
+
+- Staff model content is regenerated from source track notes on every relevant UI change.
+- Clef choice affects both pitch mapping and transpose eligibility.
+- Chord annotations are stored in bar space and rendered separately from live playback markers.
+
+#### 3.9.2 Quantization algorithm and note-value classification
+
+`Quantizer` works in quarter-note units and targets a fixed rhythmic vocabulary.
+
+Pseudo-code:
+
+```cpp
+for midiNoteEvent in trackNotes:
+    rawStartQ = tempoMap.tickToQuarter(startTick)
+    rawEndQ = tempoMap.tickToQuarter(endTick)
+    rawDurQ = max(0, rawEndQ - rawStartQ)
+
+    q.startQuarter = round(rawStartQ / 0.25) * 0.25
+    q.durationQuarter = nearest(rawDurQ, [0.25, 0.5, 1.0, 2.0, 4.0])
+    q.value = quarterToValue(q.durationQuarter) // 16th..whole
+```
+
+`quarterToValue` thresholds:
+
+- `<= 0.25` -> sixteenth
+- `<= 0.5` -> eighth
+- `<= 1.0` -> quarter
+- `<= 2.0` -> half
+- else -> whole
+
+This is intentionally not full engraving quantization (tuplets/dots/voice splitting); it favors stable readability for arbitrary MIDI.
+
+#### 3.9.3 Bar segmentation, ties, and normalization
+
+`ScoreModel::build` first allocates bars `1..maxBarHint`, then writes symbols into bar-local time.
+
+Pseudo-code:
+
+```cpp
+for q in quantizedNotes:
+    noteStart = max(0, q.startQuarter)
+    noteEnd = max(noteStart, q.startQuarter + q.durationQuarter)
+    segmentStart = noteStart
+
+    while segmentStart < noteEnd:
+        bar = tempoMap.quarterToBar(segmentStart)
+        barStart = tempoMap.barToQuarterDownbeat(bar)
+        nextBarStart = tempoMap.barToQuarterDownbeat(bar + 1)
+        segmentEnd = min(noteEnd, nextBarStart)
+
+        emit ScoreNoteSymbol {
+            barNumber = bar
+            quarter = segmentStart
+            quarterInBar = max(0, segmentStart - barStart)
+            durationQuarter = segmentEnd - segmentStart
+            midiNote = q.midiNote
+            value = quarterToNoteValue(durationQuarter)
+            tieIntoNextBar = (segmentEnd < noteEnd)
+        }
+
+        segmentStart = segmentEnd
+```
+
+Chord event normalization:
+
+```cpp
+normalized.quarter = max(0, chord.quarter - barDownbeatQuarter(bar))
+bar.chords.push_back(normalized)
+```
+
+Result: long notes crossing measure boundaries are represented as chained bar-local symbols with explicit tie metadata.
+
+#### 3.9.4 Rest gap-filling strategy
+
+Rests are synthesized so each bar has complete rhythmic coverage.
+
+Pseudo-code:
+
+```cpp
+occupied = intervals of non-rest notes in [0, barDuration]
+merged = mergeOverlaps(occupied)
+cursor = 0
+for span in merged:
+    if span.start > cursor:
+        addRestGap(cursor, span.start - cursor) // greedy: 4,2,1,0.5,0.25
+    cursor = max(cursor, span.end)
+
+if cursor < barDuration:
+    addRestGap(cursor, barDuration - cursor)
+```
+
+`addRestGap` emits one or more `isRest=true` symbols with note values chosen by longest-fit decomposition.
+
+#### 3.9.5 Pitch spelling and accidental rendering
+
+For treble/bass staffs, note spelling is computed from pitch class plus a key-signature-aware mode:
+
+- `sharps` mode
+- `flats` mode
+- `mixedInC` fallback when no key signature
+
+Pitch spelling mode selection:
+
+```mermaid
+flowchart TD
+  keySig[Key signature sharpsOrFlats] --> negCheck{value < 0}
+  negCheck -->|yes| flatsMode[Use flats lookup tables]
+  negCheck -->|no| posCheck{value > 0}
+  posCheck -->|yes| sharpsMode[Use sharps lookup tables]
+  posCheck -->|no| mixedMode[Use mixedInC lookup tables]
+  flatsMode --> pcMap[Map pitchClass to letter accidental octave]
+  sharpsMode --> pcMap
+  mixedMode --> pcMap
+```
+
+Pseudo-code:
+
+```cpp
+mode =
+    keySharpsOrFlats < 0 ? flats :
+    keySharpsOrFlats > 0 ? sharps :
+    mixedInC
+
+pc = midiNote % 12
+letter, accidental = lookupTable[mode][pc]
+```
+
+Accidental glyph policy:
+
+- drum clef -> no accidental glyph
+- accidental `-1` -> `"b"`
+- accidental `+1` -> `"#"`
+- accidental `0` -> no accidental text
+
+#### 3.9.6 Vertical placement model
+
+Treble/bass placement is diatonic, not semitone-linear:
+
+```cpp
+spelled = spellMidiPitch(note)
+diatonicIndex = spelled.octave * 7 + spelled.letter
+reference = (clef == bass) ? D3_middle_line : B4_middle_line
+y = centerY - (diatonicIndex - reference) * 5.5f
+```
+
+Ledger lines are drawn if the notehead lies outside the five-line staff bounds.
+
+Drum clef placement uses explicit GM-oriented buckets (kick/snare/toms/hats/cymbals) plus a bounded fallback mapping.
+
+#### 3.9.7 Glyph construction rules in `drawBar`
+
+Render-time glyph decision flow:
+
+```mermaid
+flowchart TD
+  symbol[ScoreNoteSymbol] --> restCheck{isRest}
+  restCheck -->|yes| restDraw[drawRestSymbol by NoteValue]
+  restCheck -->|no| pitchPrep[Compute x and y]
+  pitchPrep --> noteHead{drumCymbalOrHat}
+  noteHead -->|yes| xHead[Draw x-notehead]
+  noteHead -->|no| ellipseHead[Draw ellipse notehead]
+  xHead --> stemCheck{value != whole}
+  ellipseHead --> stemCheck
+  stemCheck -->|yes| stemDraw[Draw stem]
+  stemCheck -->|no| accidentalStep
+  stemDraw --> flagCheck{eighthOrSixteenth}
+  flagCheck -->|yes| flagDraw[Draw flag strokes]
+  flagCheck -->|no| accidentalStep
+  flagDraw --> accidentalStep[Draw accidental text if needed]
+  accidentalStep --> tieCheck{tieIntoNextBar}
+  tieCheck -->|yes| tieDraw[Draw tie arc]
+  tieCheck -->|no| beamPass[Evaluate adjacent-note beaming pass]
+  tieDraw --> beamPass
+```
+
+For each symbol in bar order:
+
+- rest symbol -> draw rest path/rect by `NoteValue`
+- pitched note:
+  - compute x from `quarterInBar`
+  - compute y from clef/pitch mapping
+  - draw notehead (ellipse or x-notehead class for cymbal/hat drums)
+  - draw stem unless whole note
+  - draw flags for eighth/sixteenth
+  - draw accidental text (if any)
+  - draw tie arc when `tieIntoNextBar=true`
+
+Simple beaming is added for adjacent short notes when:
+
+- both notes are eighth/sixteenth
+- neither is rest
+- horizontal spacing threshold is satisfied (`quarterInBar` delta <= `0.75`)
+
+#### 3.9.8 Display octave shift semantics
+
+Per-staff display octave shift is renderer-only state (`-1, 0, +1` octaves):
+
+```cpp
+displayMidi = isDrumClef ? rawMidi : clamp(0,127, rawMidi + shift * 12)
+```
+
+This transformed display pitch is used by drawing paths (y position, accidental choice, drum x-notehead classification), but does not mutate:
+
+- source MIDI track notes
+- quantizer output
+- score model storage
+- playback/output pitch behavior
+
+Because PDF export calls `ScoreRenderer::paintBarStrip(...)`, exported notation matches the same display-octave presentation (WYSIWYG).
+
 ## 4) Chord detection design
 
 ### 4.1 Input selection
@@ -307,6 +576,279 @@ Examples:
 - `Cmaj7`
 - `Ebm7`
 - `G7/B`
+
+### 4.7 Chord recognition deep dive (pseudo-code level)
+
+This subsection documents the concrete detection and runtime integration behavior from:
+
+- `src/harmony/ChordDetector.h`
+- `src/app/ScoreRebuildService.h`
+- `src/app/MainComponent.h` (`timerCallback` live marker path)
+
+#### 4.7.1 End-to-end architecture
+
+Chord recognition runs in two related pipelines:
+
+1. static annotation generation during staff rebuild (`detect`)
+2. live playback marker updates during transport (`detectInWindow`)
+
+Chord architecture overview:
+
+```mermaid
+flowchart LR
+  chordTrackSelection[Chord track selection or staff fallback] --> noteCollect[Collect analysis notes]
+  noteCollect --> staticDetect[Static detect by bar and quarter window]
+  staticDetect --> scoreModelChords[ScoreModel chord annotations]
+  scoreModelChords --> renderStatic[Render static chord labels]
+
+  noteCollect --> liveStore[Store notes per staff lane]
+  playbackClock[Playback elapsed time] --> liveWindow[Build eighth-step live window]
+  liveStore --> liveWindow
+  liveWindow --> liveDetect[detectInWindow]
+  liveDetect --> markerState[Per-staff live marker state]
+  markerState --> renderLive[Render live chord marker overlay]
+```
+
+#### 4.7.2 Input note-set construction
+
+`MainComponent` builds chord-analysis notes from selected chord tracks, with optional staff-track fallback when no chord tracks are selected.
+
+Pseudo-code:
+
+```cpp
+if selectedChordTracks not empty:
+    selectedIndices = selected chord-track source indices
+else if allowStaffFallback and selectedStaffTrackIndex valid:
+    selectedIndices = [selectedStaffTrackIndex]
+else:
+    selectedIndices = []
+
+mergedNotes = concat(project.tracks[idx].notes for idx in selectedIndices)
+
+transpose = globalTranspose + keyOverrideDelta
+for n in mergedNotes:
+    if n.channel != 10: // preserve GM percussion
+        n.noteNumber = clamp(0, 127, n.noteNumber + transpose)
+```
+
+Notes are collected twice by design:
+
+- static rebuild path for bar annotations
+- playback path for low-latency live marker refresh
+
+#### 4.7.3 Static detection scan (`detect`)
+
+Static detection iterates bar-by-bar, then quarter-window-by-quarter-window.
+
+Pseudo-code:
+
+```cpp
+out = []
+for bar in 1..maxBar:
+    previousSymbol = ""
+    barStartQ = map.barToQuarterDownbeat(bar)
+    nextBarQ = map.barToQuarterDownbeat(bar + 1)
+
+    for q in [barStartQ, barStartQ+1, ..., < nextBarQ]:
+        secA = map.tickToSeconds(map.quarterToTick(q))
+        secB = map.tickToSeconds(map.quarterToTick(q + 1))
+        symbol = detectWindow(notes, secA, secB, options)
+
+        if symbol empty:
+            previousSymbol = ""
+            continue
+
+        if symbol != previousSymbol:
+            out.push({ barNumber: bar, quarter: q, symbol: symbol })
+            previousSymbol = symbol
+```
+
+Dedup rules intentionally reset at:
+
+- new bar boundary
+- silence windows (empty symbol)
+
+This allows the same symbol to reappear after rhythmic gaps.
+
+#### 4.7.4 Window extraction and feature set
+
+`detectWindow` constructs a compact harmonic feature set from notes overlapping `[startSec, endSec)`:
+
+- `pcs`: distinct pitch classes (`0..11`)
+- `bass`: minimum MIDI note number in window
+- `highest`: maximum MIDI note number in window
+
+Guard condition:
+
+- if unique pitch classes `< 3`, return no chord
+
+Pseudo-code:
+
+```cpp
+pcs = set()
+bass = -1
+highest = -1
+for n in notes:
+    if overlaps(n.time, [startSec, endSec)):
+        pcs.add(n.noteNumber mod 12)
+        bass = minOrInit(bass, n.noteNumber)
+        highest = maxOrInit(highest, n.noteNumber)
+
+if pcs.size < 3:
+    return ""
+```
+
+#### 4.7.5 Template matcher and scorer
+
+For each candidate root `0..11` and each chord template:
+
+1. required intervals must all be present
+2. score observed pitch classes against required/optional sets
+3. apply musical-context bonuses
+4. keep highest-scoring candidate
+
+Scoring terms:
+
+- `+5` per observed required interval
+- `+2` per observed optional interval
+- `-1` per observed non-template interval
+- `+2` if bass pitch class equals root
+- `+1` if highest pitch class equals perfect fifth above root
+
+Pseudo-code:
+
+```cpp
+bestScore = -inf
+bestSymbol = ""
+for root in 0..11:
+    for tmpl in templates:
+        if any required interval missing:
+            continue
+
+        score = 0
+        for pc in pcs:
+            rel = (pc - root) mod 12
+            score += 5 if rel in required
+            score += 2 if rel in optional
+            score -= 1 otherwise
+
+        if bassPc == root: score += 2
+        if highestPc == (root + 7) mod 12: score += 1
+
+        if score > bestScore:
+            bestScore = score
+            bestSymbol = formatRootAndSuffix(root, tmpl, options)
+            if bassPc valid and bassPc != root:
+                bestSymbol += "/" + pitchName(bassPc, options.accidentalPreference)
+```
+
+Template catalog includes triads, suspended, 6/m6, sevenths, major/minor sevenths, altered sevenths (`7b5`, `7#5`, `7b9`, `7#9`), extensions (`9`, `11`, `13`), and `add9`.
+
+Template interval matrix (relative semitone offsets from candidate root):
+
+| Suffix | Required intervals | Optional intervals |
+|---|---|---|
+| `""` | `[0, 4, 7]` | `[2, 9, 11]` |
+| `"m"` | `[0, 3, 7]` | `[2, 10]` |
+| `"dim"` | `[0, 3, 6]` | `[9]` |
+| `"aug"` | `[0, 4, 8]` | `[10]` |
+| `"sus2"` | `[0, 2, 7]` | `[10]` |
+| `"sus4"` | `[0, 5, 7]` | `[10]` |
+| `"6"` | `[0, 4, 7, 9]` | `[2]` |
+| `"m6"` | `[0, 3, 7, 9]` | `[2]` |
+| `"7"` | `[0, 4, 7, 10]` | `[2, 5, 9]` |
+| `"maj7"` | `[0, 4, 7, 11]` | `[2, 9]` |
+| `"m7"` | `[0, 3, 7, 10]` | `[2, 5]` |
+| `"mMaj7"` | `[0, 3, 7, 11]` | `[2]` |
+| `"7b5"` | `[0, 4, 6, 10]` | `[2]` |
+| `"7#5"` | `[0, 4, 8, 10]` | `[2]` |
+| `"9"` | `[0, 4, 7, 10, 2]` | `[5, 9]` |
+| `"m9"` | `[0, 3, 7, 10, 2]` | `[5]` |
+| `"11"` | `[0, 4, 7, 10, 5]` | `[2]` |
+| `"13"` | `[0, 4, 7, 10, 9]` | `[2, 5]` |
+| `"7b9"` | `[0, 4, 7, 10, 1]` | `[8]` |
+| `"7#9"` | `[0, 4, 7, 10, 3]` | `[8]` |
+| `"add9"` | `[0, 4, 7, 2]` | `[9, 11]` |
+
+#### 4.7.6 Naming transform layer
+
+Root and slash-bass pitch names are formatted by accidental preference:
+
+- `preferSharps` -> `C#`, `F#`, `A#`
+- `preferFlats` -> `Db`, `Gb`, `Bb`
+
+Suffix post-processing for jazz symbols:
+
+- `maj7` -> `^7`
+- `mMaj7` -> `m^7`
+- `m` -> `-`
+- `m7` -> `-7`
+
+All other suffixes pass through unchanged.
+
+#### 4.7.7 Live detection path and marker-state machine
+
+Live markers use a denser cadence than static labels:
+
+- update checkpoint: each 1/8 note (by quantized `eighthIndex`)
+- detection window size: 0.5 quarter notes
+
+Pseudo-code:
+
+```cpp
+eighthIndex = floor(currentQuarter * 2)
+windowQStart = eighthIndex / 2.0
+windowQEnd = windowQStart + 0.5
+symbol = detectInWindow(liveChordNotesByStaff[staff], sec(windowQStart), sec(windowQEnd), namingOptions)
+
+if symbol empty:
+    clear marker if previously shown
+else:
+    markerBar = quarterToBar(windowQStart)
+    markerQuarterInBar = windowQStart - barDownbeatQuarter(markerBar)
+    if symbol changed OR marker position moved:
+        update marker
+```
+
+Marker update suppression avoids redundant UI repaints when symbol and position are unchanged.
+
+Live marker flow:
+
+```mermaid
+flowchart TD
+  tick[Timer callback while playing] --> qConv[Convert elapsed seconds to quarter]
+  qConv --> eighthStep[Quantize to eighth index]
+  eighthStep --> repeatCheck{same as last index}
+  repeatCheck -->|yes| noOp[Skip update]
+  repeatCheck -->|no| windowBuild[Build 0.5q detection window]
+  windowBuild --> detectCall[detectInWindow]
+  detectCall --> symbolCheck{symbol empty}
+  symbolCheck -->|yes| clearMarker[Clear live marker if visible]
+  symbolCheck -->|no| posCompute[Compute marker bar and quarterInBar]
+  posCompute --> changeCheck{symbol or position changed}
+  changeCheck -->|yes| setMarker[Set/update live marker]
+  changeCheck -->|no| noOp
+```
+
+#### 4.7.8 Complexity and performance posture
+
+Let:
+
+- `N` = notes overlapping a queried window candidate pass
+- `R` = 12 roots
+- `T` = template count
+- `B` = bars
+- `Q` = windows per bar (quarter scan for static; denser half-quarter/eighth checkpoints for live)
+
+Then:
+
+- `detectWindow` is roughly `O(N + R*T*|pcs|)` with small bounded `|pcs| <= 12`
+- static detect is `O(B * Q * detectWindow)`
+- live detect is amortized by eighth-index gate and "changed-only" marker update
+
+Additional optimization already present:
+
+- When chord-track selection is active, shared static chord detection is computed once per rebuild and reused across staff lanes (`ScoreRebuildService` shared-chords path).
 
 ## 5) Key and transpose interactions
 
