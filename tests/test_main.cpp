@@ -10,6 +10,7 @@
 #include "../src/playback/TrackMixProcessor.h"
 #include "../src/playback/TrackMixMidiSeed.h"
 #include "../src/app/ScoreRebuildService.h"
+#include "../src/app/KeyOverrideTranspose.h"
 #include "../src/app/ScorePdfExporter.h"
 #include "../src/notation/ScoreRenderer.h"
 #include "TestFixturePaths.h"
@@ -1036,6 +1037,37 @@ void testCheckedInFixturesLoad()
     testSyncopatedDurationsFixtureBehavior();
     testAlteredChordsFixtureBehavior();
 }
+
+void testKeyOverrideTranspose()
+{
+    // C-major MIDI metadata (0 sharps/flats, major).
+    expectTrue(KeyOverrideTranspose::midiTonicPc(true, 0, true) == 0, "C major MIDI tonic is C");
+    expectTrue(KeyOverrideTranspose::midiTonicPc(true, -2, true) == 10, "Bb major MIDI tonic is Bb");
+
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(false, false, 0, true, 0, true) == 0,
+               "Matching override and MIDI key does not transpose");
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(false, false, 10, true, 0, true) == -2,
+               "Bb override on C-major MIDI transposes down 2 semitones");
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(false, false, 2, true, 0, true) == 2,
+               "D override on C-major MIDI transposes up 2 semitones");
+
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(true, false, 10, true, 0, true) == 0,
+               "Assign checked blocks key override transpose");
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(false, true, 10, true, 0, true) == 0,
+               "Profile-only mode blocks key override transpose");
+
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(false, false, 2, true, 0, true, 2) == 0,
+               "D override with D reference does not transpose");
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(false, false, 10, true, 0, true, 2) == -4,
+               "Bb override with D reference transposes down 4 semitones");
+    expectTrue(KeyOverrideTranspose::semitonesForKeyOverride(false, false, 2, true, 0, true, 10) == 4,
+               "D override with Bb reference transposes up 4 semitones");
+
+    expectTrue(KeyOverrideTranspose::appliedSemitonesAfterKeyChange(0, 0, 5) == 5,
+               "C to F accumulates +5 semitones from source");
+    expectTrue(KeyOverrideTranspose::appliedSemitonesAfterKeyChange(5, 5, 0) == 0,
+               "F back to C returns accumulated transpose to zero");
+}
 }
 
 int main()
@@ -1064,6 +1096,7 @@ int main()
     testMidiPlaybackAdapterSeekAndDispatch();
     testTrackMixProcessor();
     testTrackMixMidiSeed();
+    testKeyOverrideTranspose();
     testCheckedInFixturesLoad();
 
     if (failures == 0)

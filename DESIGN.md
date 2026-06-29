@@ -877,16 +877,19 @@ Additional optimization already present:
 
 Effective transpose used by notation/chord analysis:
 
-- `effective = globalTranspose + keyOverrideDelta`
+- `effective = globalTranspose + (assignEnabled ? 0 : keyOverrideAppliedSemitones)`
 
-where key override delta is:
+where key override applied semitones accumulate per key change:
 
-- override tonic pitch-class minus detected MIDI tonic pitch-class
-- normalized to nearest interval in `[-6, +6]`
+- each key change (with **Assign** unchecked) adds the shortest-path semitone delta from the previous key center to the new override key
+- on preset load, applied semitones initialize from `(override tonic - MIDI tonic)` when a key override is present
+- returning to a prior key (e.g. C -> F -> C) returns applied semitones to zero because deltas accumulate from source MIDI, not from the current displayed pitch
 
 Important:
 
 - detected MIDI key uses major/minor conversion compatible with the tonic lookup helper
+- when **Assign** is enabled, key text is preserved for profile/reference but contributes `0` semitones
+- **Assign** is session-only and is not stored in `ui_preset.json`
 - drum clef and channel-10 percussion remain untransposed
 
 ## 5.1) Score status line
@@ -898,7 +901,7 @@ Important:
 - **Sig** — time signature from tempo map (first signature event)
 - **Bar** — current bar / max bar
 - **Tempo** — detected BPM, with override text when tempo override is active
-- **KeySrc** — whether key used for notation/transposition is **detected** (MIDI key signature) or **override** (Key field)
+- **KeySrc** — whether key text source is **detected** (MIDI key signature) or **override** (Key field); transpose application is additionally gated by **Assign**
 
 Playback messages include `Playback running`, `Playback stopped`, `Playback continuing from bar N`, and `Playback finished.`
 

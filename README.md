@@ -81,7 +81,7 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
   - row 1: Load MIDI, Start/Stop, Continue, Bar, accidental/alias, Save/Load Preset, Recent MIDI, Open Recent, Chord Tracks label
   - row 2: staff track/display-octave/clef selectors, then PDF mode, Export PDF, Light Score
   - row 3: Chord Grid controls + Chord Tracks checkboxes
-  - row 4: Tempo, Key, Transpose, status line
+  - row 4: Tempo, Assign, Key, Transpose, status line
 - Window title includes loaded MIDI filename.
 
 ## Project structure
@@ -147,7 +147,8 @@ open "build-mac/MidiScorer_artefacts/Debug/MidiScorer.app"
 5. Choose harmonic source tracks using **Chord Tracks** checkboxes.
 6. Optionally adjust:
    - transpose
-   - key override
+   - key override text
+   - key `Assign` checkbox (session-only; checked: profile-only key text, no transpose)
    - chord naming options
    - score color mode
 7. Use **Score** tab to view/edit notation options and track assignments.

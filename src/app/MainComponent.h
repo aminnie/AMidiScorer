@@ -19,6 +19,7 @@
 #include "../playback/TrackMixState.h"
 #include "../playback/TrackMixMidiSeed.h"
 #include "PresetFileStore.h"
+#include "KeyOverrideTranspose.h"
 #include "ScorePdfExporter.h"
 #include "ScoreRebuildService.h"
 #include "TransportCoordinator.h"
@@ -263,6 +264,31 @@ public:
         addAndMakeVisible(statusLabel);
         statusLabel.setJustificationType(juce::Justification::centredLeft);
 
+        addAndMakeVisible(assignLabel);
+        assignLabel.setText("Assign", juce::dontSendNotification);
+        assignLabel.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(assignToggle);
+        assignToggle.setButtonText({});
+        assignToggle.setToggleState(true, juce::dontSendNotification);
+        assignToggle.onClick = [this]
+        {
+            if (assignToggle.getToggleState())
+            {
+                keyOverrideProfileOnly = keyOverride.has_value();
+                suppressProfileOnlyExitUntilKeyChange = false;
+                syncKeyTransposeReferenceToOverrideOrMidi();
+                keyTransposeAppliedSemitones = 0;
+                rebuildAllStaffs();
+            }
+            else if (keyOverrideProfileOnly)
+            {
+                // Do not immediately exit profile-only mode on uncheck.
+                // Wait until the user actually changes the key text.
+                suppressProfileOnlyExitUntilKeyChange = true;
+            }
+            refreshSavePresetButtonDirtyStyle();
+        };
+
         addAndMakeVisible(keyOverrideLabel);
         keyOverrideLabel.setText("Key:", juce::dontSendNotification);
         keyOverrideLabel.setJustificationType(juce::Justification::centredRight);
@@ -396,6 +422,8 @@ public:
         tempoOverrideLabel.setBounds(statusRow.removeFromLeft(50));
         tempoOverrideInput.setBounds(statusRow.removeFromLeft(72).reduced(4, 0));
         tempoHelpButton.setBounds(statusRow.removeFromLeft(28).reduced(4, 0));
+        assignLabel.setBounds(statusRow.removeFromLeft(48));
+        assignToggle.setBounds(statusRow.removeFromLeft(30).reduced(4, 0));
         keyOverrideLabel.setBounds(statusRow.removeFromLeft(36));
         keyOverrideInput.setBounds(statusRow.removeFromLeft(68).reduced(4, 0));
         keyHelpButton.setBounds(statusRow.removeFromLeft(28).reduced(4, 0));
@@ -926,10 +954,19 @@ private:
 
     void applyKeyOverrideFromInput(bool userInitiated)
     {
+        const bool wasProfileOnly = keyOverrideProfileOnly;
         const auto text = keyOverrideInput.getText().trim();
         if (text.isEmpty())
         {
             keyOverride = std::nullopt;
+            if (userInitiated)
+            {
+                keyOverrideProfileOnly = false;
+                suppressProfileOnlyExitUntilKeyChange = false;
+                assignToggle.setToggleState(true, juce::dontSendNotification);
+            }
+            keyTransposeReferenceTonicPc = getMidiDetectedTonicPc();
+            keyTransposeAppliedSemitones = 0;
             if (userInitiated)
                 setStatusMessage("Key override cleared (using detected key).");
             return;
@@ -939,16 +976,72 @@ private:
         if (!parsed.has_value())
         {
             keyOverride = std::nullopt;
-            keyOverrideInput.setText({}, juce::dontSendNotification);
+            if (userInitiated)
+            {
+                keyOverrideProfileOnly = false;
+                suppressProfileOnlyExitUntilKeyChange = false;
+                keyOverrideInput.setText({}, juce::dontSendNotification);
+                assignToggle.setToggleState(true, juce::dontSendNotification);
+            }
             if (userInitiated)
                 setStatusMessage("Invalid key override. Reverted to detected key.");
             return;
         }
 
+        const bool keyChanged = !keyOverride.has_value()
+            || !keyOverride->displayText.equalsIgnoreCase(parsed->displayText);
         keyOverride = parsed;
         keyOverrideInput.setText(parsed->displayText, juce::dontSendNotification);
         if (userInitiated)
+        {
+            if (assignToggle.getToggleState())
+            {
+                keyOverrideProfileOnly = true;
+                suppressProfileOnlyExitUntilKeyChange = false;
+            }
+            else if (wasProfileOnly && suppressProfileOnlyExitUntilKeyChange && !keyChanged)
+            {
+                // Preserve profile-only mode through the immediate follow-up key
+                // event after uncheck. Exit only when the key text actually changes.
+                keyOverrideProfileOnly = true;
+            }
+            else
+            {
+                keyOverrideProfileOnly = false;
+                suppressProfileOnlyExitUntilKeyChange = false;
+            }
+        }
+        if (userInitiated)
             setStatusMessage("Key override set to " + parsed->displayText + ".");
+
+        if (assignToggle.getToggleState() || keyOverrideProfileOnly)
+        {
+            syncKeyTransposeReferenceToOverrideOrMidi();
+            keyTransposeAppliedSemitones = 0;
+        }
+        else if (keyChanged)
+        {
+            keyTransposeAppliedSemitones = KeyOverrideTranspose::appliedSemitonesAfterKeyChange(
+                keyTransposeAppliedSemitones,
+                keyTransposeReferenceTonicPc,
+                parsed->tonicPc);
+            pendingKeyTransposeReferenceTonicPc = parsed->tonicPc;
+        }
+    }
+
+    int getMidiDetectedTonicPc() const
+    {
+        return KeyOverrideTranspose::midiTonicPc(project.hasKeySignature,
+                                                project.keySharpsOrFlats,
+                                                project.keyIsMajor);
+    }
+
+    void syncKeyTransposeReferenceToOverrideOrMidi()
+    {
+        if (keyOverride.has_value())
+            keyTransposeReferenceTonicPc = keyOverride->tonicPc;
+        else
+            keyTransposeReferenceTonicPc = getMidiDetectedTonicPc();
     }
 
     void applyTempoOverrideFromInput(bool userInitiated)
@@ -981,27 +1074,12 @@ private:
             setStatusMessage("Tempo override set to " + formatTempoBpm(parsed.value()) + ".");
     }
 
-    int getDetectedKeyTonicPc() const
-    {
-        if (!project.hasKeySignature)
-            return 0;
-        // tonicPcFromSignature expects "isMinor", while MIDI metadata stores "isMajor".
-        const int tonicPc = tonicPcFromSignature(project.keySharpsOrFlats, !project.keyIsMajor);
-        return tonicPc;
-    }
-
     int getKeyOverrideTransposeSemitones() const
     {
-        if (!keyOverride.has_value())
+        if (assignToggle.getToggleState() || keyOverrideProfileOnly || !keyOverride.has_value())
             return 0;
 
-        const int detectedTonic = getDetectedKeyTonicPc();
-        int delta = keyOverride->tonicPc - detectedTonic;
-        while (delta > 6)
-            delta -= 12;
-        while (delta < -6)
-            delta += 12;
-        return delta;
+        return keyTransposeAppliedSemitones;
     }
 
     int getEffectiveTransposeSemitones(bool normalizeText = false)
@@ -2196,6 +2274,10 @@ private:
                           getIntProperty("chordResolution", static_cast<int>(ChordDetector::DetectionResolution::quarter))),
                 juce::dontSendNotification);
         }
+        assignToggle.setToggleState(false, juce::dontSendNotification);
+        keyOverrideProfileOnly = false;
+        suppressProfileOnlyExitUntilKeyChange = false;
+        keyTransposeReferenceTonicPc = getMidiDetectedTonicPc();
         exportPdfModeSelector.setSelectedId(
             juce::jlimit(static_cast<int>(PdfExportMode::allActiveStaffs),
                          static_cast<int>(PdfExportMode::staff1Only),
@@ -2229,7 +2311,17 @@ private:
             }
         }
         applyKeyOverrideFromInput(false);
-
+        syncKeyTransposeReferenceToOverrideOrMidi();
+        if (keyOverride.has_value() && !assignToggle.getToggleState() && !keyOverrideProfileOnly)
+        {
+            keyTransposeAppliedSemitones = KeyOverrideTranspose::normalizeSemitoneDelta(
+                keyOverride->tonicPc - getMidiDetectedTonicPc());
+        }
+        else
+        {
+            keyTransposeAppliedSemitones = 0;
+        }
+        pendingKeyTransposeReferenceTonicPc = std::nullopt;
         const auto songTempoOverride = getSongTempoOverrideFromPreset(*obj);
         if (songTempoOverride.isNotEmpty())
             tempoOverrideInput.setText(songTempoOverride, juce::dontSendNotification);
@@ -2667,6 +2759,11 @@ private:
     {
         auto ctx = buildScoreRebuildContext();
         ScoreRebuildService::rebuildAllStaffs(ctx, buildScoreRebuildLanes());
+        if (pendingKeyTransposeReferenceTonicPc.has_value())
+        {
+            keyTransposeReferenceTonicPc = pendingKeyTransposeReferenceTonicPc.value();
+            pendingKeyTransposeReferenceTonicPc = std::nullopt;
+        }
         resized();
     }
 
@@ -2709,7 +2806,7 @@ private:
                       "  3  moves C up to Eb\n"
                       " -3  moves C down to A\n\n"
                       "Drum clef staffs and GM channel 10 percussion are not transposed.\n"
-                      "This value stacks with the Key override.");
+                      "This value stacks with Key override when Assign is unchecked.");
     }
 
     void showKeyHelpModal()
@@ -2720,8 +2817,9 @@ private:
                       "Examples: C, Eb, F#, Cm, Ebm\n"
                       "Use b for flats (Eb, Bb) and # for sharps (F#).\n"
                       "Add m for minor keys.\n\n"
-                      "Leave blank to use the key from the MIDI file.\n"
-                      "When set, the app transposes by the difference between the MIDI key and your override.");
+                      "Leave blank to use the key from the MIDI file (Assign auto-checks).\n"
+                      "Assign checked: key text is saved for profile/reference only.\n"
+                      "Assign unchecked: app transposes by the difference between MIDI key and your override.");
     }
 
     void showTempoHelpModal()
@@ -2896,6 +2994,8 @@ private:
     juce::Label tempoOverrideLabel;
     juce::TextEditor tempoOverrideInput;
     juce::TextButton tempoHelpButton;
+    juce::Label assignLabel;
+    juce::ToggleButton assignToggle;
     juce::Label keyOverrideLabel;
     juce::TextEditor keyOverrideInput;
     juce::TextButton keyHelpButton;
@@ -2933,6 +3033,11 @@ private:
     std::optional<ScoreSongSettingsSnapshot> savedScoreSongSettingsSnapshot;
     std::optional<double> tempoOverrideBpm;
     std::optional<ParsedKey> keyOverride;
+    bool keyOverrideProfileOnly = false;
+    bool suppressProfileOnlyExitUntilKeyChange = false;
+    int keyTransposeReferenceTonicPc = 0;
+    int keyTransposeAppliedSemitones = 0;
+    std::optional<int> pendingKeyTransposeReferenceTonicPc;
     std::array<std::vector<MidiNoteEvent>, 3> liveChordNotesByStaff;
     std::array<LiveChordState, 3> liveChordStates;
     static constexpr int trackMixPresetAutosaveDelayMs = 400;

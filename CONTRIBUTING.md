@@ -73,6 +73,8 @@ At minimum before submitting:
    - verify light/dark score toggle
    - verify key signature glyphs appear at the left edge of the first visible bar on each staff
    - verify enlarged clef/key-signature symbols do not overlap notes in first visible bar
+   - verify checked `Assign` keeps key text profile-only (no transpose), unchecked `Assign` applies key override transpose
+   - verify key override transpose accumulates correctly across key changes (e.g. C -> F -> C returns to original pitch)
    - verify top-right staff header text follows selected track/instrument names
    - verify Drum clef mode renders percussion track notes with expected vertical placement
    - verify `No Display` hides selected staff lanes and remaining lanes expand to fill space
