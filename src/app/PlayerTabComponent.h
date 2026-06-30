@@ -35,6 +35,15 @@ public:
             scorePage.setStartupResumeEnabled(startupResumeToggle.getToggleState());
         };
 
+        addAndMakeVisible(scoreLightModeToggle);
+        scoreLightModeToggle.setButtonText("Light Score");
+        scoreLightModeToggle.setToggleState(scorePage.isScoreLightMode(), juce::dontSendNotification);
+        scoreLightModeToggle.setTooltip("Toggle score display between white-on-black and black-on-white.");
+        scoreLightModeToggle.onClick = [this]
+        {
+            scorePage.setScoreLightMode(scoreLightModeToggle.getToggleState());
+        };
+
         addAndMakeVisible(outputSelector);
         outputSelector.onChange = [this] { handleOutputSelectionChanged(); };
 
@@ -70,7 +79,9 @@ public:
         exitButton.setBounds(row1.removeFromRight(80).reduced(4, 0));
 
         area.removeFromTop(8);
-        startupResumeToggle.setBounds(area.removeFromTop(24));
+        auto toggleRow = area.removeFromTop(24);
+        startupResumeToggle.setBounds(toggleRow.removeFromLeft(260));
+        scoreLightModeToggle.setBounds(toggleRow.removeFromLeft(120));
 
         area.removeFromTop(8);
         fileLabel.setBounds(area.removeFromTop(24));
@@ -146,6 +157,10 @@ private:
         if (restoreWarning.isNotEmpty())
             statusText << "  | Warning: " << restoreWarning;
         statusLabel.setText(statusText, juce::dontSendNotification);
+
+        const bool lightScore = scorePage.isScoreLightMode();
+        if (scoreLightModeToggle.getToggleState() != lightScore)
+            scoreLightModeToggle.setToggleState(lightScore, juce::dontSendNotification);
     }
 
     MainComponent& scorePage;
@@ -157,6 +172,7 @@ private:
     juce::TextButton refreshOutputsButton;
     juce::TextButton exitButton { "Exit" };
     juce::ToggleButton startupResumeToggle;
+    juce::ToggleButton scoreLightModeToggle;
     juce::Label fileLabel;
     juce::Label statusLabel;
 };

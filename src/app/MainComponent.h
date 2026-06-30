@@ -162,16 +162,6 @@ public:
         chordTracksLabel.setText("Chord Tracks", juce::dontSendNotification);
         chordTracksLabel.setJustificationType(juce::Justification::centredLeft);
 
-        addAndMakeVisible(scoreColorToggle);
-        scoreColorToggle.setButtonText("Light Score");
-        scoreColorToggle.setToggleState(true, juce::dontSendNotification);
-        scoreColorToggle.onClick = [this]
-        {
-            applyScoreColorScheme();
-            refreshSavePresetButtonDirtyStyle();
-        };
-        scoreColorToggle.setTooltip("Toggle score display between white-on-black and black-on-white.");
-
         addAndMakeVisible(globalTransposeLabel);
         globalTransposeLabel.setText("Transpose", juce::dontSendNotification);
         globalTransposeLabel.setJustificationType(juce::Justification::centredRight);
@@ -410,8 +400,6 @@ public:
         exportPdfButton.setBounds(selectorRow.removeFromLeft(juce::jmin(108, selectorRow.getWidth())).reduced(4, 0));
         selectorRow.removeFromLeft(juce::jmin(4, selectorRow.getWidth()));
         exportPdfModeSelector.setBounds(selectorRow.removeFromLeft(juce::jmin(72, selectorRow.getWidth())).reduced(4, 0));
-        selectorRow.removeFromLeft(juce::jmin(4, selectorRow.getWidth()));
-        scoreColorToggle.setBounds(selectorRow.removeFromLeft(juce::jmin(110, selectorRow.getWidth())).reduced(4, 0));
 
         area.removeFromTop(6);
         auto chordTracksArea = area.removeFromTop(getChordTracksLayoutHeight(area.getWidth()));
@@ -529,6 +517,21 @@ public:
 
         startupResumeEnabled = enabled;
         saveStartupResumeEnabledToPreset();
+    }
+
+    bool isScoreLightMode() const
+    {
+        return scoreLightMode;
+    }
+
+    void setScoreLightMode(bool light)
+    {
+        if (scoreLightMode == light)
+            return;
+
+        scoreLightMode = light;
+        applyScoreColorScheme();
+        refreshSavePresetButtonDirtyStyle();
     }
 
     void runStartupResumeIfEnabled()
@@ -1154,7 +1157,7 @@ private:
         snapshot.transposeSemitones = getClampedTranspose(globalTransposeInput);
         snapshot.keyOverrideText = keyOverride.has_value() ? keyOverride->displayText : juce::String();
         snapshot.tempoOverrideText = tempoOverrideInput.getText().trim();
-        snapshot.scoreLightMode = scoreColorToggle.getToggleState();
+        snapshot.scoreLightMode = scoreLightMode;
         snapshot.pdfExportModeId = exportPdfModeSelector.getSelectedId();
         return snapshot;
     }
@@ -1945,7 +1948,7 @@ private:
         obj->setProperty("accidental", accidentalSelector.getSelectedId());
         obj->setProperty("alias", aliasSelector.getSelectedId());
         obj->setProperty("chordResolution", normalizeChordResolutionSelectorId(chordResolutionSelector.getSelectedId()));
-        obj->setProperty("scoreLightMode", scoreColorToggle.getToggleState());
+        obj->setProperty("scoreLightMode", scoreLightMode);
         obj->setProperty("pdfExportMode", exportPdfModeSelector.getSelectedId());
         obj->setProperty("tempoOverrideEnabled", tempoOverrideBpm.has_value());
         obj->setProperty("tempoOverrideText", tempoOverrideInput.getText().trim());
@@ -2283,7 +2286,7 @@ private:
                          static_cast<int>(PdfExportMode::staff1Only),
                          getIntProperty("pdfExportMode", static_cast<int>(PdfExportMode::allActiveStaffs))),
             juce::dontSendNotification);
-        scoreColorToggle.setToggleState(getIntProperty("scoreLightMode", 0) != 0, juce::dontSendNotification);
+        scoreLightMode = getIntProperty("scoreLightMode", 0) != 0;
         if (obj->hasProperty("lastMidiDirectory"))
         {
             const juce::File candidate(obj->getProperty("lastMidiDirectory").toString());
@@ -2769,7 +2772,7 @@ private:
 
     void applyScoreColorScheme()
     {
-        const auto scheme = scoreColorToggle.getToggleState()
+        const auto scheme = scoreLightMode
             ? ScoreRenderer::ColorScheme::light
             : ScoreRenderer::ColorScheme::dark;
         scoreRenderer.setColorScheme(scheme);
@@ -2973,7 +2976,6 @@ private:
     juce::Label chordTracksLabel;
     juce::OwnedArray<juce::ToggleButton> chordTrackButtons;
     juce::Array<int> chordTrackSourceIndices;
-    juce::ToggleButton scoreColorToggle;
     juce::Label globalTransposeLabel;
     juce::TextEditor globalTransposeInput;
     juce::TextButton transposeHelpButton;
@@ -3022,6 +3024,7 @@ private:
     juce::String lastLoadedMidiPath;
     std::vector<juce::String> recentMidiFiles;
     bool startupResumeEnabled = false;
+    bool scoreLightMode = true;
     juce::String midiOutputRestoreWarning;
     bool continueArmed = false;
     bool loopEnabled = false;
