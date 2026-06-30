@@ -6,7 +6,7 @@ class MidiScorerApplication final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "MidiScorer"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return true; }
+    bool moreThanOneInstanceAllowed() override { return false; }
 
     void initialise(const juce::String&) override
     {
@@ -21,6 +21,15 @@ public:
     void systemRequestedQuit() override
     {
         quit();
+    }
+
+    void anotherInstanceStarted(const juce::String&) override
+    {
+        if (mainWindow != nullptr)
+        {
+            mainWindow->setVisible(true);
+            mainWindow->toFront(true);
+        }
     }
 
 private:
