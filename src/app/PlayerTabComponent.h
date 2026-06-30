@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <functional>
 #include <vector>
 #include "MainComponent.h"
 
@@ -37,9 +38,26 @@ public:
         addAndMakeVisible(outputSelector);
         outputSelector.onChange = [this] { handleOutputSelectionChanged(); };
 
+        addAndMakeVisible(exitButton);
+        exitButton.setButtonText("Exit");
+        exitButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        exitButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        exitButton.setColour(juce::TextButton::buttonColourId, juce::Colours::black.darker());
+        exitButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::black.brighter());
+        exitButton.onClick = [this]()
+        {
+            if (exitAction)
+                exitAction();
+        };
+
         refreshOutputDeviceList();
         refreshLiveStatus();
         startTimerHz(5);
+    }
+
+    void setExitAction(std::function<void()> action)
+    {
+        exitAction = std::move(action);
     }
 
     void resized() override
@@ -49,6 +67,7 @@ public:
         outputLabel.setBounds(row1.removeFromLeft(90));
         outputSelector.setBounds(row1.removeFromLeft(360).reduced(4, 0));
         refreshOutputsButton.setBounds(row1.removeFromLeft(96).reduced(4, 0));
+        exitButton.setBounds(row1.removeFromRight(80).reduced(4, 0));
 
         area.removeFromTop(8);
         startupResumeToggle.setBounds(area.removeFromTop(24));
@@ -131,10 +150,12 @@ private:
 
     MainComponent& scorePage;
     std::vector<MidiOutputDeviceInfo> availableOutputs;
+    std::function<void()> exitAction;
 
     juce::Label outputLabel;
     juce::ComboBox outputSelector;
     juce::TextButton refreshOutputsButton;
+    juce::TextButton exitButton { "Exit" };
     juce::ToggleButton startupResumeToggle;
     juce::Label fileLabel;
     juce::Label statusLabel;
