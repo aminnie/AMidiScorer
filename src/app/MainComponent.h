@@ -133,7 +133,7 @@ public:
         aliasSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
 
         addAndMakeVisible(chordResolutionLabel);
-        chordResolutionLabel.setText("Chord Grid", juce::dontSendNotification);
+        chordResolutionLabel.setText("Grid", juce::dontSendNotification);
         chordResolutionLabel.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(chordResolutionSelector);
         chordResolutionSelector.addItem("1/4", static_cast<int>(ChordDetector::DetectionResolution::quarter));
@@ -148,8 +148,11 @@ public:
         };
 
         addAndMakeVisible(chordComplexityLabel);
-        chordComplexityLabel.setText("Chord Level", juce::dontSendNotification);
+        chordComplexityLabel.setText("Level", juce::dontSendNotification);
         chordComplexityLabel.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(autoChordLabel);
+        autoChordLabel.setText("AutoChords:", juce::dontSendNotification);
+        autoChordLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(chordComplexitySelector);
         chordComplexitySelector.addItem("Simple", static_cast<int>(ChordDetector::ChordComplexity::simple));
         chordComplexitySelector.addItem("Standard", static_cast<int>(ChordDetector::ChordComplexity::standard));
@@ -164,7 +167,7 @@ public:
         };
 
         addAndMakeVisible(chordTracksLabel);
-        chordTracksLabel.setText("Chord Tracks", juce::dontSendNotification);
+        chordTracksLabel.setText("Chord Tracks:", juce::dontSendNotification);
         chordTracksLabel.setJustificationType(juce::Justification::centredLeft);
 
         addAndMakeVisible(globalTransposeLabel);
@@ -352,8 +355,10 @@ public:
         applyScoreColorScheme();
         setStatusMessage("Load a MIDI file to begin.");
         loadLastMidiDirectoryFromPreset();
+        loadWorkingDirectoryFromPreset();
         loadRecentFilesFromPreset();
         loadStartupSettingsFromPreset();
+        ensureWorkingDirectoryInitialized();
         refreshRecentFilesButtonState();
         loadSelectedMidiOutputFromConfig();
 
@@ -379,11 +384,11 @@ public:
         loopStartInput.setBounds(row.removeFromLeft(44).reduced(4, 0));
         loopEndLabel.setBounds(row.removeFromLeft(18));
         loopEndInput.setBounds(row.removeFromLeft(44).reduced(4, 0));
-        accidentalSelector.setBounds(row.removeFromLeft(120).reduced(4, 0));
-        accidentalHelpButton.setBounds(row.removeFromLeft(28).reduced(4, 0));
-        aliasSelector.setBounds(row.removeFromLeft(136).reduced(4, 0));
         savePresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
         loadPresetButton.setBounds(row.removeFromLeft(100).reduced(4, 0));
+        exportPdfButton.setBounds(row.removeFromLeft(108).reduced(4, 0));
+        row.removeFromLeft(juce::jmin(4, row.getWidth()));
+        exportPdfModeSelector.setBounds(row.removeFromLeft(juce::jmin(72, row.getWidth())).reduced(4, 0));
         openRecentButton.setBounds(row.removeFromLeft(126).reduced(4, 0));
         chordTracksLabel.setBounds(row);
 
@@ -401,10 +406,6 @@ public:
         layoutStaffControls(section3, staff3TrackLabel, staff3TrackSelector, staff3OctaveSelector, staff3ClefSelector);
         staff2TrackLabel.setBounds(staff2TrackLabel.getBounds().translated(6, 0));
         staff3TrackLabel.setBounds(staff3TrackLabel.getBounds().translated(6, 0));
-        selectorRow.removeFromLeft(juce::jmin(6, selectorRow.getWidth()));
-        exportPdfButton.setBounds(selectorRow.removeFromLeft(juce::jmin(108, selectorRow.getWidth())).reduced(4, 0));
-        selectorRow.removeFromLeft(juce::jmin(4, selectorRow.getWidth()));
-        exportPdfModeSelector.setBounds(selectorRow.removeFromLeft(juce::jmin(72, selectorRow.getWidth())).reduced(4, 0));
 
         area.removeFromTop(6);
         auto chordTracksArea = area.removeFromTop(getChordTracksLayoutHeight(area.getWidth()));
@@ -510,6 +511,18 @@ public:
         return project.file.existsAsFile() ? project.file.getFileName() : juce::String();
     }
 
+    juce::String getLoadedMidiFilePath() const
+    {
+        return project.file.existsAsFile() ? project.file.getFullPathName() : juce::String();
+    }
+
+    bool isLoadedMidiInWorkingDirectory() const
+    {
+        if (!project.file.existsAsFile() || !workingDirectory.isDirectory())
+            return false;
+        return project.file.getParentDirectory().getFullPathName().equalsIgnoreCase(workingDirectory.getFullPathName());
+    }
+
     bool isStartupResumeEnabled() const
     {
         return startupResumeEnabled;
@@ -522,6 +535,47 @@ public:
 
         startupResumeEnabled = enabled;
         saveStartupResumeEnabledToPreset();
+    }
+
+    juce::String getWorkingDirectoryPath() const
+    {
+        return workingDirectory.isDirectory() ? workingDirectory.getFullPathName() : juce::String();
+    }
+
+    bool setWorkingDirectoryPath(const juce::String& path, juce::String& error)
+    {
+        const auto trimmed = path.trim();
+        if (trimmed.isEmpty())
+        {
+            error = "Working directory path cannot be empty.";
+            return false;
+        }
+
+        juce::File candidate(trimmed);
+        if (candidate.existsAsFile())
+        {
+            error = "Working directory path points to a file.";
+            return false;
+        }
+
+        if (!candidate.exists())
+        {
+            if (!candidate.createDirectory())
+            {
+                error = "Could not create working directory.";
+                return false;
+            }
+        }
+
+        if (!candidate.isDirectory())
+        {
+            error = "Working directory is invalid.";
+            return false;
+        }
+
+        workingDirectory = candidate;
+        saveWorkingDirectoryToPreset();
+        return true;
     }
 
     bool isScoreLightMode() const
@@ -1354,11 +1408,13 @@ private:
 
     int getChordTracksLayoutHeight(int availableWidth) const
     {
-        const int leadingWidth = 256;
+        const int tracksLabelWidth = 120;
         const int xPadding = 6;
         const int yPadding = 4;
+        const int topRowHeight = 26;
+        const int rowGap = 4;
         const int rowHeight = 22;
-        const int usableWidth = juce::jmax(120, availableWidth - leadingWidth - xPadding * 2);
+        const int usableWidth = juce::jmax(120, availableWidth - tracksLabelWidth - xPadding * 2);
 
         int rows = 1;
         int rowX = 0;
@@ -1374,45 +1430,71 @@ private:
             rowX += buttonWidth + xPadding;
         }
 
-        return yPadding * 2 + rows * rowHeight;
+        return yPadding * 2 + topRowHeight + rowGap + rows * rowHeight;
     }
 
     void layoutChordTrackButtons(juce::Rectangle<int> area)
     {
-        auto chordComplexityLabelBounds = area.removeFromLeft(94);
-        auto chordComplexityBounds = area.removeFromLeft(116).reduced(4, 0);
+        const int xPadding = 6;
+        const int rowHeight = 22;
+        const int topRowHeight = 26;
+        const int rowGap = 4;
+
+        auto topRow = area.removeFromTop(topRowHeight);
+        auto buttonsArea = area;
+        buttonsArea.removeFromTop(rowGap);
+
+        auto autoChordLabelBounds = topRow.removeFromLeft(82);
+        auto chordComplexityLabelBounds = topRow.removeFromLeft(52);
+        auto chordComplexityBounds = topRow.removeFromLeft(96).reduced(4, 0);
         chordComplexityBounds.setHeight(26);
+        autoChordLabelBounds.setY(chordComplexityBounds.getY());
+        autoChordLabelBounds.setHeight(chordComplexityBounds.getHeight());
+        autoChordLabel.setBounds(autoChordLabelBounds);
         chordComplexityLabelBounds.setY(chordComplexityBounds.getY());
         chordComplexityLabelBounds.setHeight(chordComplexityBounds.getHeight());
         chordComplexityLabel.setBounds(chordComplexityLabelBounds);
         chordComplexitySelector.setBounds(chordComplexityBounds);
 
-        auto chordResolutionLabelBounds = area.removeFromLeft(82);
-        auto chordResolutionBounds = area.removeFromLeft(70).reduced(4, 0);
+        auto chordResolutionLabelBounds = topRow.removeFromLeft(42);
+        auto chordResolutionBounds = topRow.removeFromLeft(64).reduced(4, 0);
         chordResolutionBounds.setHeight(26);
         chordResolutionLabelBounds.setY(chordResolutionBounds.getY());
         chordResolutionLabelBounds.setHeight(chordResolutionBounds.getHeight());
         chordResolutionLabel.setBounds(chordResolutionLabelBounds);
         chordResolutionSelector.setBounds(chordResolutionBounds);
 
-        auto chordTracksLabelBounds = area.removeFromLeft(104);
-        chordTracksLabelBounds.setY(chordResolutionBounds.getY());
-        chordTracksLabelBounds.setHeight(chordResolutionBounds.getHeight());
+        auto accidentalBounds = topRow.removeFromLeft(116).reduced(4, 0);
+        accidentalBounds.setY(chordResolutionBounds.getY());
+        accidentalBounds.setHeight(chordResolutionBounds.getHeight());
+        accidentalSelector.setBounds(accidentalBounds);
+
+        auto accidentalHelpBounds = topRow.removeFromLeft(28).reduced(4, 0);
+        accidentalHelpBounds.setY(chordResolutionBounds.getY());
+        accidentalHelpBounds.setHeight(chordResolutionBounds.getHeight());
+        accidentalHelpButton.setBounds(accidentalHelpBounds);
+
+        auto aliasBounds = topRow.removeFromLeft(128).reduced(4, 0);
+        aliasBounds.setY(chordResolutionBounds.getY());
+        aliasBounds.setHeight(chordResolutionBounds.getHeight());
+        aliasSelector.setBounds(aliasBounds);
+
+        auto chordTracksLabelBounds = buttonsArea.removeFromLeft(120);
+        chordTracksLabelBounds.setY(buttonsArea.getY());
+        chordTracksLabelBounds.setHeight(rowHeight);
         chordTracksLabel.setBounds(chordTracksLabelBounds);
 
-        const int xPadding = 6;
-        const int rowHeight = 22;
-        int x = area.getX();
-        int y = area.getY() + 2;
-        const int right = area.getRight();
+        int x = buttonsArea.getX();
+        int y = buttonsArea.getY();
+        const int right = buttonsArea.getRight();
         juce::Font measureFont(13.0f);
 
         for (auto* button : chordTrackButtons)
         {
             const int w = juce::jlimit(84, 190, measureFont.getStringWidth(button->getButtonText()) + 28);
-            if (x > area.getX() && x + w > right)
+            if (x > buttonsArea.getX() && x + w > right)
             {
-                x = area.getX();
+                x = buttonsArea.getX();
                 y += rowHeight;
             }
             button->setBounds(x, y, w, rowHeight - 2);
@@ -1566,6 +1648,60 @@ private:
                 },
                 writeError))
             juce::Logger::writeToLog("MidiScorer: could not save last MIDI directory: " + writeError);
+    }
+
+    void loadWorkingDirectoryFromPreset()
+    {
+        const auto file = PresetFileStore::getPresetFilePath();
+        if (!file.existsAsFile())
+            return;
+
+        juce::var parsed;
+        const auto parseResult = juce::JSON::parse(file.loadFileAsString(), parsed);
+        if (parseResult.failed() || !parsed.isObject())
+            return;
+
+        auto* obj = parsed.getDynamicObject();
+        if (obj == nullptr || !obj->hasProperty("workingDirectory"))
+            return;
+
+        const juce::File candidate(obj->getProperty("workingDirectory").toString());
+        if (candidate.isDirectory())
+            workingDirectory = candidate;
+    }
+
+    void saveWorkingDirectoryToPreset()
+    {
+        if (!workingDirectory.isDirectory())
+            return;
+
+        const auto directoryPath = workingDirectory.getFullPathName();
+        juce::String writeError;
+        if (!PresetFileStore::mergeWritePreset(
+                [&](juce::DynamicObject& obj)
+                {
+                    obj.setProperty("workingDirectory", directoryPath);
+                },
+                writeError))
+            juce::Logger::writeToLog("MidiScorer: could not save working directory: " + writeError);
+    }
+
+    void ensureWorkingDirectoryInitialized()
+    {
+        if (workingDirectory.isDirectory())
+            return;
+
+        juce::File defaultDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+            .getChildFile("MidiScorer")
+            .getChildFile("WorkingMidi");
+        if (!defaultDir.exists())
+            defaultDir.createDirectory();
+
+        if (defaultDir.isDirectory())
+        {
+            workingDirectory = defaultDir;
+            saveWorkingDirectoryToPreset();
+        }
     }
 
     void loadStartupSettingsFromPreset()
@@ -1747,20 +1883,55 @@ private:
         refreshStatusMessage();
     }
 
+    juce::File copyMidiToWorkingDirectoryIfNeeded(const juce::File& sourceFile, bool& copied)
+    {
+        copied = false;
+
+        if (!sourceFile.existsAsFile() || !workingDirectory.isDirectory())
+            return sourceFile;
+
+        if (sourceFile.getParentDirectory().getFullPathName().equalsIgnoreCase(workingDirectory.getFullPathName()))
+            return sourceFile;
+
+        juce::File destination = workingDirectory.getChildFile(sourceFile.getFileName());
+        if (destination.existsAsFile() && !destination.hasIdenticalContentTo(sourceFile))
+        {
+            destination = workingDirectory.getNonexistentChildFile(
+                sourceFile.getFileNameWithoutExtension(),
+                sourceFile.getFileExtension(),
+                false);
+        }
+
+        if (destination.getFullPathName().equalsIgnoreCase(sourceFile.getFullPathName()))
+            return sourceFile;
+
+        if (!sourceFile.copyFileTo(destination))
+        {
+            setStatusMessage("Could not copy MIDI to working directory; loading original file.");
+            return sourceFile;
+        }
+
+        copied = true;
+        return destination;
+    }
+
     void loadMidiFileFromPath(const juce::File& file)
     {
         if (!file.existsAsFile())
             return;
 
         invalidateDebouncedTrackMixPresetSave();
-        lastMidiDirectory = file.getParentDirectory();
+        bool copiedToWorkingDirectory = false;
+        const juce::File fileToLoad = copyMidiToWorkingDirectoryIfNeeded(file, copiedToWorkingDirectory);
+
+        lastMidiDirectory = fileToLoad.getParentDirectory();
         saveLastMidiDirectoryToPreset();
-        pushRecentMidiFile(file);
+        pushRecentMidiFile(fileToLoad);
 
         juce::String error;
         MidiProjectData loaded;
         bool rejectedType0 = false;
-        if (!loader.load(file, loaded, error, &rejectedType0, false))
+        if (!loader.load(fileToLoad, loaded, error, &rejectedType0, false))
         {
             if (rejectedType0)
             {
@@ -1775,7 +1946,7 @@ private:
             return;
         }
 
-        if (!midiPlaybackEngine.loadFromFile(file, error))
+        if (!midiPlaybackEngine.loadFromFile(fileToLoad, error))
         {
             setStatusMessage("Load failed: unable to prepare MIDI player (" + error + ")");
             updateWindowTitle();
@@ -1820,8 +1991,11 @@ private:
             refreshSavePresetButtonDirtyStyle();
         }
         setStatusMessage(autoPresetLoaded
-                             ? ("Loaded: " + project.file.getFileName() + " (auto preset applied)")
-                             : ("Loaded: " + project.file.getFileName()));
+                             ? ("Loaded: " + project.file.getFileName()
+                                + (copiedToWorkingDirectory ? " (copied to working directory, auto preset applied)"
+                                                            : " (auto preset applied)"))
+                             : ("Loaded: " + project.file.getFileName()
+                                + (copiedToWorkingDirectory ? " (copied to working directory)" : "")));
         lastLoadedMidiPath = project.file.getFullPathName().replaceCharacter('\\', '/');
         saveLastLoadedMidiPathToPreset();
     }
@@ -2101,6 +2275,8 @@ private:
             obj->setProperty("lastLoadedMidiPath", lastLoadedMidiPath);
         if (lastMidiDirectory.isDirectory())
             obj->setProperty("lastMidiDirectory", lastMidiDirectory.getFullPathName());
+        if (workingDirectory.isDirectory())
+            obj->setProperty("workingDirectory", workingDirectory.getFullPathName());
         {
             juce::Array<juce::var> recent;
             for (const auto& path : recentMidiFiles)
@@ -2470,6 +2646,12 @@ private:
             const juce::File candidate(obj->getProperty("lastMidiDirectory").toString());
             if (candidate.isDirectory())
                 lastMidiDirectory = candidate;
+        }
+        if (obj->hasProperty("workingDirectory"))
+        {
+            const juce::File candidate(obj->getProperty("workingDirectory").toString());
+            if (candidate.isDirectory())
+                workingDirectory = candidate;
         }
         const auto songKeyOverrideText = getSongKeyOverrideTextFromPreset(*obj);
         if (songKeyOverrideText.has_value() && songKeyOverrideText->isNotEmpty())
@@ -3145,6 +3327,7 @@ private:
     juce::ComboBox accidentalSelector;
     juce::TextButton accidentalHelpButton;
     juce::ComboBox aliasSelector;
+    juce::Label autoChordLabel;
     juce::Label chordComplexityLabel;
     juce::ComboBox chordComplexitySelector;
     juce::Label chordResolutionLabel;
@@ -3197,6 +3380,7 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
     std::unique_ptr<juce::FileChooser> exportPdfFileChooser;
     juce::File lastMidiDirectory;
+    juce::File workingDirectory;
     juce::String lastLoadedMidiPath;
     std::vector<juce::String> recentMidiFiles;
     bool startupResumeEnabled = false;

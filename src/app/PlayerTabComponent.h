@@ -35,6 +35,20 @@ public:
             scorePage.setStartupResumeEnabled(startupResumeToggle.getToggleState());
         };
 
+        addAndMakeVisible(workingDirectoryLabel);
+        workingDirectoryLabel.setText("Working Directory", juce::dontSendNotification);
+        workingDirectoryLabel.setJustificationType(juce::Justification::centredRight);
+
+        addAndMakeVisible(workingDirectoryInput);
+        workingDirectoryInput.setText(scorePage.getWorkingDirectoryPath(), juce::dontSendNotification);
+        workingDirectoryInput.setTooltip("MIDI files loaded from outside this folder are copied here automatically.");
+        workingDirectoryInput.onReturnKey = [this] { applyWorkingDirectoryInput(); };
+        workingDirectoryInput.onFocusLost = [this] { applyWorkingDirectoryInput(); };
+
+        addAndMakeVisible(browseWorkingDirectoryButton);
+        browseWorkingDirectoryButton.setButtonText("Browse...");
+        browseWorkingDirectoryButton.onClick = [this] { browseWorkingDirectory(); };
+
         addAndMakeVisible(scoreLightModeToggle);
         scoreLightModeToggle.setButtonText("Light Score");
         scoreLightModeToggle.setToggleState(scorePage.isScoreLightMode(), juce::dontSendNotification);
@@ -77,6 +91,12 @@ public:
         outputSelector.setBounds(row1.removeFromLeft(360).reduced(4, 0));
         refreshOutputsButton.setBounds(row1.removeFromLeft(96).reduced(4, 0));
         exitButton.setBounds(row1.removeFromRight(80).reduced(4, 0));
+
+        area.removeFromTop(8);
+        auto workingRow = area.removeFromTop(24);
+        workingDirectoryLabel.setBounds(workingRow.removeFromLeft(116));
+        workingDirectoryInput.setBounds(workingRow.removeFromLeft(540).reduced(4, 0));
+        browseWorkingDirectoryButton.setBounds(workingRow.removeFromLeft(96).reduced(4, 0));
 
         area.removeFromTop(8);
         auto toggleRow = area.removeFromTop(24);
@@ -140,8 +160,23 @@ private:
     void refreshLiveStatus()
     {
         const auto midiName = scorePage.getLoadedMidiFileName();
-        fileLabel.setText(midiName.isNotEmpty() ? ("Loaded MIDI: " + midiName) : "Loaded MIDI: none",
-                          juce::dontSendNotification);
+        if (midiName.isNotEmpty())
+        {
+            juce::String text = "Loaded MIDI: " + midiName;
+            if (scorePage.isLoadedMidiInWorkingDirectory())
+                text << " (Working Directory)";
+            else
+                text << " (Outside Working Directory)";
+            fileLabel.setText(text, juce::dontSendNotification);
+        }
+        else
+        {
+            fileLabel.setText("Loaded MIDI: none", juce::dontSendNotification);
+        }
+
+        const auto workingDirPath = scorePage.getWorkingDirectoryPath();
+        if (workingDirectoryInput.getText() != workingDirPath)
+            workingDirectoryInput.setText(workingDirPath, juce::dontSendNotification);
 
         const bool isPlaying = scorePage.isPlaybackRunning();
         const int currentBar = scorePage.getCurrentPlaybackBar();
@@ -163,15 +198,61 @@ private:
             scoreLightModeToggle.setToggleState(lightScore, juce::dontSendNotification);
     }
 
+    void applyWorkingDirectoryInput()
+    {
+        juce::String error;
+        if (!scorePage.setWorkingDirectoryPath(workingDirectoryInput.getText(), error))
+        {
+            statusLabel.setText("Working directory error: " + error, juce::dontSendNotification);
+            workingDirectoryInput.setText(scorePage.getWorkingDirectoryPath(), juce::dontSendNotification);
+            return;
+        }
+
+        workingDirectoryInput.setText(scorePage.getWorkingDirectoryPath(), juce::dontSendNotification);
+    }
+
+    void browseWorkingDirectory()
+    {
+        workingDirectoryChooser = std::make_unique<juce::FileChooser>(
+            "Select working directory",
+            juce::File(scorePage.getWorkingDirectoryPath()),
+            "*.mid;*.midi",
+            false,
+            false,
+            this);
+        const auto chooserFlags = juce::FileBrowserComponent::openMode
+                                | juce::FileBrowserComponent::canSelectFiles
+                                | juce::FileBrowserComponent::canSelectDirectories;
+        workingDirectoryChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& chooser)
+        {
+            auto selected = chooser.getResult();
+            if (!selected.exists())
+                return;
+
+            if (selected.existsAsFile())
+                selected = selected.getParentDirectory();
+
+            if (!selected.isDirectory())
+                return;
+
+            workingDirectoryInput.setText(selected.getFullPathName(), juce::dontSendNotification);
+            applyWorkingDirectoryInput();
+        });
+    }
+
     MainComponent& scorePage;
     std::vector<MidiOutputDeviceInfo> availableOutputs;
     std::function<void()> exitAction;
+    std::unique_ptr<juce::FileChooser> workingDirectoryChooser;
 
     juce::Label outputLabel;
     juce::ComboBox outputSelector;
     juce::TextButton refreshOutputsButton;
     juce::TextButton exitButton { "Exit" };
     juce::ToggleButton startupResumeToggle;
+    juce::Label workingDirectoryLabel;
+    juce::TextEditor workingDirectoryInput;
+    juce::TextButton browseWorkingDirectoryButton;
     juce::ToggleButton scoreLightModeToggle;
     juce::Label fileLabel;
     juce::Label statusLabel;
