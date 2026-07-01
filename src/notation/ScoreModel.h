@@ -23,6 +23,7 @@ struct ScoreNoteSymbol
     NoteValue value = NoteValue::quarter;
     bool dotted = false;
     bool isRest = false;
+    bool isTriplet = false;
     bool tieFromPreviousBar = false;
     bool tieIntoNextBar = false;
 };
@@ -101,6 +102,7 @@ public:
                 const auto durationSymbol = Quantizer::durationFromQuarter(segmentDurationQuarter);
                 symbol.value = durationSymbol.value;
                 symbol.dotted = durationSymbol.dotted;
+                symbol.isTriplet = n.isTriplet;
                 symbol.tieFromPreviousBar = segmentStartQuarter > noteStartQuarter + 1.0e-6;
                 symbol.tieIntoNextBar = segmentEndQuarter < noteEndQuarter - 1.0e-6;
                 bars[(size_t) idx].notes.push_back(symbol);
@@ -193,6 +195,7 @@ private:
             rest.value = durationSymbol.value;
             rest.dotted = durationSymbol.dotted;
             rest.isRest = true;
+            rest.isTriplet = false;
             rest.tieFromPreviousBar = false;
             rest.tieIntoNextBar = false;
             bar.notes.push_back(rest);

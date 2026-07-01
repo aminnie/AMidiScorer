@@ -65,6 +65,32 @@ void testQuantizer()
     expectTrue(quantized.front().value == NoteValue::quarter, "Quarter duration detected");
 }
 
+void testQuantizerTripletFlagging()
+{
+    TempoMap map;
+    std::vector<TempoMetaEvent> tempos { { 0.0, 120.0 } };
+    std::vector<TimeSignatureMetaEvent> signatures { { 0.0, 4, 4 } };
+    map.build(960.0, tempos, signatures, 1920.0);
+
+    MidiNoteEvent triplet;
+    triplet.noteNumber = 60;
+    triplet.startTick = 0.0;
+    triplet.endTick = 320.0; // one third of a quarter at 960 PPQ
+    auto tripletQuantized = Quantizer::quantizeTrack(std::vector<MidiNoteEvent> { triplet }, map);
+    expectTrue(!tripletQuantized.empty(), "Triplet quantization returns notes");
+    if (!tripletQuantized.empty())
+        expectTrue(tripletQuantized.front().isTriplet, "Triplet duration is flagged for rendering");
+
+    MidiNoteEvent straight;
+    straight.noteNumber = 62;
+    straight.startTick = 0.0;
+    straight.endTick = 480.0; // straight eighth
+    auto straightQuantized = Quantizer::quantizeTrack(std::vector<MidiNoteEvent> { straight }, map);
+    expectTrue(!straightQuantized.empty(), "Straight quantization returns notes");
+    if (!straightQuantized.empty())
+        expectTrue(!straightQuantized.front().isTriplet, "Straight duration is not flagged as triplet");
+}
+
 void testDottedDurationQuantization()
 {
     TempoMap map;
@@ -1095,6 +1121,7 @@ int main()
 {
     testTempoMap();
     testQuantizer();
+    testQuantizerTripletFlagging();
     testDottedDurationQuantization();
     testChordDetector();
     testChordDetectionResolution();

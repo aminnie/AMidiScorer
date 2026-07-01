@@ -24,6 +24,7 @@ struct QuantizedNote
     double durationQuarter = 1.0;
     NoteValue value = NoteValue::quarter;
     bool dotted = false;
+    bool isTriplet = false;
 };
 
 class Quantizer
@@ -104,6 +105,7 @@ public:
 
             q.startQuarter = quantizeToSixteenth(rawStartQuarter);
             q.durationQuarter = quantizeDuration(rawDurationQuarter);
+            q.isTriplet = isTripletDuration(rawDurationQuarter);
             const auto durationSymbol = durationFromQuarter(q.durationQuarter);
             q.value = durationSymbol.value;
             q.dotted = durationSymbol.dotted;
@@ -128,5 +130,22 @@ public:
     static NoteValue quarterToValue(double quarterLength)
     {
         return durationFromQuarter(quarterLength).value;
+    }
+
+    static bool isTripletDuration(double quarterLength)
+    {
+        static constexpr double tripletDurations[] {
+            1.0 / 6.0, // sixteenth-triplet
+            1.0 / 3.0, // eighth-triplet
+            2.0 / 3.0, // quarter-triplet in simple meter
+            4.0 / 3.0
+        };
+
+        for (double target : tripletDurations)
+        {
+            if (std::abs(quarterLength - target) <= 0.07)
+                return true;
+        }
+        return false;
     }
 };

@@ -811,6 +811,31 @@ private:
             g.drawLine(xA, yA, xB, yB, 2.0f);
         }
 
+        std::vector<const ScoreNoteSymbol*> tripletNotes;
+        tripletNotes.reserve(bar.notes.size());
+        for (const auto& symbol : bar.notes)
+        {
+            if (!symbol.isRest && symbol.isTriplet)
+                tripletNotes.push_back(&symbol);
+        }
+
+        for (size_t i = 0; i + 2 < tripletNotes.size(); i += 3)
+        {
+            const auto& n0 = *tripletNotes[i];
+            const auto& n2 = *tripletNotes[i + 2];
+            const float x0 = left + static_cast<float>((juce::jmax(0.0, n0.quarterInBar) / juce::jmax(0.25, qPerBar)) * width);
+            const float x2 = left + static_cast<float>((juce::jmax(0.0, n2.quarterInBar) / juce::jmax(0.25, qPerBar)) * width)
+                + durationWidth(n2.value);
+            const float xMid = (x0 + x2) * 0.5f;
+            const float yTop = static_cast<float>(staffRect.getY()) - 8.0f;
+
+            g.setColour(noteColour);
+            g.setFont(12.0f);
+            g.drawText("3",
+                       juce::Rectangle<float>(xMid - 6.0f, yTop - 10.0f, 12.0f, 12.0f),
+                       juce::Justification::centred);
+        }
+
     }
 
     const ScoreModel* model = nullptr;
