@@ -64,6 +64,8 @@ MidiScorer is a JUCE/C++ standalone desktop app that reads MIDI files, renders u
   - staff/chord-track/accidental/alias/chord-level selections (including `No Display`) and other score UI state per song
 - Non-destructive workflow:
   - loaded MIDI files are treated as source material and are not rewritten by the app
+  - when loading a MIDI outside the configured working directory, MidiScorer prompts for a working-copy filename before copying; cancel aborts the load
+  - startup auto-resume loads still skip the rename prompt and use the existing automatic working-directory copy behavior
   - user edits are persisted in profile data and can be reloaded with **Load Preset**
 - Full-song score PDF export:
   - `PDF mode` selector supports:

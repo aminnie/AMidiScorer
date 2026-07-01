@@ -5,6 +5,7 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <vector>
@@ -24,6 +25,7 @@
 #include "ScorePdfExporter.h"
 #include "ScoreRebuildService.h"
 #include "TransportCoordinator.h"
+#include "WorkingDirectoryCopy.h"
 
 class MainComponent final : public juce::Component,
                             public juce::FileDragAndDropTarget,
@@ -66,7 +68,7 @@ public:
         staff1OctaveSelector.setTooltip("Display-only octave shift for Staff 1. MIDI playback is unchanged.");
 
         addAndMakeVisible(staff2TrackLabel);
-        staff2TrackLabel.setText("Staff 2", juce::dontSendNotification);
+        staff2TrackLabel.setText("Staff 2 ", juce::dontSendNotification);
         staff2TrackLabel.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(staff2TrackSelector);
         staff2TrackSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
@@ -90,7 +92,7 @@ public:
         staff2OctaveSelector.setTooltip("Display-only octave shift for Staff 2. MIDI playback is unchanged.");
 
         addAndMakeVisible(staff3TrackLabel);
-        staff3TrackLabel.setText("Staff 3", juce::dontSendNotification);
+        staff3TrackLabel.setText("Staff 3 ", juce::dontSendNotification);
         staff3TrackLabel.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(staff3TrackSelector);
         staff3TrackSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
@@ -117,18 +119,24 @@ public:
         transportToggleButton.setButtonText("Start");
         transportToggleButton.onClick = [this] { onTransportToggleClicked(); };
 
+        addAndMakeVisible(accidentalLabel);
+        accidentalLabel.setText("Names", juce::dontSendNotification);
+        accidentalLabel.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(accidentalSelector);
-        accidentalSelector.addItem("Sharp names", 1);
-        accidentalSelector.addItem("Flat names", 2);
+        accidentalSelector.addItem("Sharp", 1);
+        accidentalSelector.addItem("Flat", 2);
         accidentalSelector.setSelectedId(1, juce::dontSendNotification);
         accidentalSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
         addAndMakeVisible(accidentalHelpButton);
         accidentalHelpButton.setButtonText("?");
         accidentalHelpButton.onClick = [this] { showAccidentalHelpModal(); };
 
+        addAndMakeVisible(aliasLabel);
+        aliasLabel.setText("Text", juce::dontSendNotification);
+        aliasLabel.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(aliasSelector);
-        aliasSelector.addItem("Chord text plain", 1);
-        aliasSelector.addItem("Chord text jazz", 2);
+        aliasSelector.addItem("Plain", 1);
+        aliasSelector.addItem("Jazz", 2);
         aliasSelector.setSelectedId(1, juce::dontSendNotification);
         aliasSelector.onChange = [this] { rebuildAllStaffs(); refreshSavePresetButtonDirtyStyle(); };
 
@@ -151,7 +159,7 @@ public:
         chordComplexityLabel.setText("Level", juce::dontSendNotification);
         chordComplexityLabel.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(autoChordLabel);
-        autoChordLabel.setText("AutoChords:", juce::dontSendNotification);
+        autoChordLabel.setText("Auto Chords:", juce::dontSendNotification);
         autoChordLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(chordComplexitySelector);
         chordComplexitySelector.addItem("Simple", static_cast<int>(ChordDetector::ChordComplexity::simple));
@@ -184,6 +192,10 @@ public:
 
         addAndMakeVisible(continueButton);
         continueButton.setButtonText("Continue");
+        continueButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+        continueButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+        continueButton.setColour(juce::TextButton::buttonColourId, juce::Colours::antiquewhite);
+        continueButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::lightgrey);
         continueButton.onClick = [this] { continuePlaybackFromBar(); };
 
         addAndMakeVisible(continueBarLabel);
@@ -246,6 +258,10 @@ public:
 
         addAndMakeVisible(exportPdfButton);
         exportPdfButton.setButtonText("Export PDF");
+        exportPdfButton.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
+        exportPdfButton.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+        exportPdfButton.setColour(juce::TextButton::buttonColourId, juce::Colours::lightgrey);
+        exportPdfButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::antiquewhite);
         exportPdfButton.onClick = [this] { exportScorePdf(); };
 
         addAndMakeVisible(exportPdfModeSelector);
@@ -404,8 +420,12 @@ public:
         layoutStaffControls(section1, staff1TrackLabel, staff1TrackSelector, staff1OctaveSelector, staff1ClefSelector);
         layoutStaffControls(section2, staff2TrackLabel, staff2TrackSelector, staff2OctaveSelector, staff2ClefSelector);
         layoutStaffControls(section3, staff3TrackLabel, staff3TrackSelector, staff3OctaveSelector, staff3ClefSelector);
+        constexpr int staff2TrackSelectorShift = 8;
+        constexpr int staff3TrackControlsShift = 10;
         staff2TrackLabel.setBounds(staff2TrackLabel.getBounds().translated(6, 0));
-        staff3TrackLabel.setBounds(staff3TrackLabel.getBounds().translated(6, 0));
+        staff2TrackSelector.setBounds(staff2TrackSelector.getBounds().translated(staff2TrackSelectorShift, 0));
+        staff3TrackLabel.setBounds(staff3TrackLabel.getBounds().translated(staff3TrackControlsShift, 0));
+        staff3TrackSelector.setBounds(staff3TrackSelector.getBounds().translated(staff3TrackControlsShift, 0));
 
         area.removeFromTop(6);
         auto chordTracksArea = area.removeFromTop(getChordTracksLayoutHeight(area.getWidth()));
@@ -608,7 +628,14 @@ public:
             return;
         }
 
-        loadMidiFileFromPath(resumeFile);
+        loadMidiFileFromPath(resumeFile, true);
+
+        juce::Component::SafePointer<MainComponent> safeThis(this);
+        juce::MessageManager::callAsync([safeThis]()
+        {
+            if (safeThis != nullptr)
+                safeThis->updateWindowTitle();
+        });
     }
 
     enum class TrackMixSaveStatus
@@ -969,13 +996,16 @@ private:
 
     void updateWindowTitle()
     {
-        if (auto* window = findParentComponentOfClass<juce::DocumentWindow>())
-        {
-            const auto title = project.file.existsAsFile()
-                ? ("MidiScorer - " + project.file.getFileName())
-                : juce::String("MidiScorer");
-            window->setName(title);
-        }
+        auto* window = dynamic_cast<juce::DocumentWindow*>(getTopLevelComponent());
+        if (window == nullptr)
+            window = findParentComponentOfClass<juce::DocumentWindow>();
+        if (window == nullptr)
+            return;
+
+        const auto title = project.file.existsAsFile()
+            ? ("MidiScorer - " + project.file.getFileName())
+            : juce::String("MidiScorer");
+        window->setName(title);
     }
 
     static int getClampedTranspose(const juce::TextEditor& input)
@@ -1310,18 +1340,34 @@ private:
 
     void applySavePresetButtonCleanStyle()
     {
-        savePresetButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        savePresetButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        savePresetButton.setColour(juce::TextButton::buttonColourId, juce::Colours::black.darker());
-        savePresetButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::black.brighter());
+        const auto baseOff = juce::Colours::lightgrey;
+        const auto baseOn = juce::Colours::lightgrey;
+        const auto baseText = juce::Colours::black;
+
+        savePresetButton.setColour(juce::TextButton::buttonColourId, baseOff);
+        savePresetButton.setColour(juce::TextButton::buttonOnColourId, baseOn);
+        savePresetButton.setColour(juce::TextButton::textColourOffId, baseText);
+        savePresetButton.setColour(juce::TextButton::textColourOnId, baseText);
+        loadPresetButton.setColour(juce::TextButton::buttonColourId, baseOff);
+        loadPresetButton.setColour(juce::TextButton::buttonOnColourId, baseOn);
+        loadPresetButton.setColour(juce::TextButton::textColourOffId, baseText);
+        loadPresetButton.setColour(juce::TextButton::textColourOnId, baseText);
     }
 
     void applySavePresetButtonDirtyStyle()
     {
-        savePresetButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        savePresetButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        savePresetButton.setColour(juce::TextButton::buttonColourId, juce::Colours::darkred);
-        savePresetButton.setColour(juce::TextButton::buttonOnColourId, juce::Colours::darkred.brighter());
+        const auto pendingOff = juce::Colours::darkred;
+        const auto pendingOn = juce::Colours::darkred.brighter();
+        const auto pendingText = juce::Colours::white;
+
+        savePresetButton.setColour(juce::TextButton::buttonColourId, pendingOff);
+        savePresetButton.setColour(juce::TextButton::buttonOnColourId, pendingOn);
+        savePresetButton.setColour(juce::TextButton::textColourOffId, pendingText);
+        savePresetButton.setColour(juce::TextButton::textColourOnId, pendingText);
+        loadPresetButton.setColour(juce::TextButton::buttonColourId, pendingOff);
+        loadPresetButton.setColour(juce::TextButton::buttonOnColourId, pendingOn);
+        loadPresetButton.setColour(juce::TextButton::textColourOffId, pendingText);
+        loadPresetButton.setColour(juce::TextButton::textColourOnId, pendingText);
     }
 
     void refreshSavePresetButtonDirtyStyle()
@@ -1464,7 +1510,12 @@ private:
         chordResolutionLabel.setBounds(chordResolutionLabelBounds);
         chordResolutionSelector.setBounds(chordResolutionBounds);
 
-        auto accidentalBounds = topRow.removeFromLeft(116).reduced(4, 0);
+        auto accidentalLabelBounds = topRow.removeFromLeft(52);
+        accidentalLabelBounds.setY(chordResolutionBounds.getY());
+        accidentalLabelBounds.setHeight(chordResolutionBounds.getHeight());
+        accidentalLabel.setBounds(accidentalLabelBounds);
+
+        auto accidentalBounds = topRow.removeFromLeft(92).reduced(4, 0);
         accidentalBounds.setY(chordResolutionBounds.getY());
         accidentalBounds.setHeight(chordResolutionBounds.getHeight());
         accidentalSelector.setBounds(accidentalBounds);
@@ -1474,7 +1525,12 @@ private:
         accidentalHelpBounds.setHeight(chordResolutionBounds.getHeight());
         accidentalHelpButton.setBounds(accidentalHelpBounds);
 
-        auto aliasBounds = topRow.removeFromLeft(128).reduced(4, 0);
+        auto aliasLabelBounds = topRow.removeFromLeft(40);
+        aliasLabelBounds.setY(chordResolutionBounds.getY());
+        aliasLabelBounds.setHeight(chordResolutionBounds.getHeight());
+        aliasLabel.setBounds(aliasLabelBounds);
+
+        auto aliasBounds = topRow.removeFromLeft(88).reduced(4, 0);
         aliasBounds.setY(chordResolutionBounds.getY());
         aliasBounds.setHeight(chordResolutionBounds.getHeight());
         aliasSelector.setBounds(aliasBounds);
@@ -1915,14 +1971,74 @@ private:
         return destination;
     }
 
-    void loadMidiFileFromPath(const juce::File& file)
+    void showRenameBeforeCopyModal(const juce::File& sourceFile,
+                                   const juce::String& initialBaseName,
+                                   const juce::String& validationError,
+                                   const std::function<void(std::optional<juce::File>)>& onComplete)
     {
-        if (!file.existsAsFile())
+        if (!sourceFile.existsAsFile() || !workingDirectory.isDirectory())
+        {
+            onComplete(std::nullopt);
             return;
+        }
 
-        invalidateDebouncedTrackMixPresetSave();
-        bool copiedToWorkingDirectory = false;
-        const juce::File fileToLoad = copyMidiToWorkingDirectoryIfNeeded(file, copiedToWorkingDirectory);
+        juce::String message = "Choose a filename for the working-directory copy.\n\n"
+                               "Source: " + sourceFile.getFullPathName() + "\n"
+                               "Target folder: " + workingDirectory.getFullPathName();
+        if (validationError.isNotEmpty())
+            message += "\n\n" + validationError;
+
+        auto* alert = new juce::AlertWindow("Copy to Working Directory",
+                                            message,
+                                            juce::MessageBoxIconType::QuestionIcon,
+                                            this);
+        alert->addTextEditor("midiName",
+                             WorkingDirectoryCopy::normalizeMidiBaseName(initialBaseName),
+                             "Filename");
+        alert->addButton("Copy & Load", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+        juce::Component::SafePointer<MainComponent> safeThis(this);
+        alert->enterModalState(true, juce::ModalCallbackFunction::create([safeThis, alert, sourceFile, onComplete](int result)
+        {
+            if (safeThis == nullptr)
+                return;
+
+            if (result != 1)
+            {
+                onComplete(std::nullopt);
+                return;
+            }
+
+            juce::String destinationError;
+            const auto requestedBaseName = alert->getTextEditorContents("midiName");
+            const auto destination = WorkingDirectoryCopy::buildWorkingDirectoryDestination(
+                safeThis->workingDirectory,
+                requestedBaseName,
+                sourceFile.getFileExtension(),
+                destinationError);
+
+            if (!destination.has_value())
+            {
+                safeThis->showRenameBeforeCopyModal(sourceFile, requestedBaseName, destinationError, onComplete);
+                return;
+            }
+
+            if (!sourceFile.copyFileTo(*destination))
+            {
+                showWarningModal(safeThis, "Copy to Working Directory", "Could not copy MIDI to working directory.");
+                onComplete(std::nullopt);
+                return;
+            }
+
+            onComplete(*destination);
+        }), true);
+    }
+
+    void finishLoadMidiFileFromPath(const juce::File& fileToLoad, bool copiedToWorkingDirectory)
+    {
+        if (!fileToLoad.existsAsFile())
+            return;
 
         lastMidiDirectory = fileToLoad.getParentDirectory();
         saveLastMidiDirectoryToPreset();
@@ -1998,6 +2114,38 @@ private:
                                 + (copiedToWorkingDirectory ? " (copied to working directory)" : "")));
         lastLoadedMidiPath = project.file.getFullPathName().replaceCharacter('\\', '/');
         saveLastLoadedMidiPathToPreset();
+        updateWindowTitle();
+    }
+
+    void loadMidiFileFromPath(const juce::File& file, bool skipRenamePrompt = false)
+    {
+        if (!file.existsAsFile())
+            return;
+
+        invalidateDebouncedTrackMixPresetSave();
+
+        if (!skipRenamePrompt && WorkingDirectoryCopy::needsCopyToWorkingDirectory(file, workingDirectory))
+        {
+            juce::Component::SafePointer<MainComponent> safeThis(this);
+            showRenameBeforeCopyModal(file, file.getFileNameWithoutExtension(), {}, [safeThis](std::optional<juce::File> destination)
+            {
+                if (safeThis == nullptr)
+                    return;
+
+                if (!destination.has_value())
+                {
+                    safeThis->setStatusMessage("Load cancelled.");
+                    return;
+                }
+
+                safeThis->finishLoadMidiFileFromPath(destination.value(), true);
+            });
+            return;
+        }
+
+        bool copiedToWorkingDirectory = false;
+        const juce::File fileToLoad = copyMidiToWorkingDirectoryIfNeeded(file, copiedToWorkingDirectory);
+        finishLoadMidiFileFromPath(fileToLoad, copiedToWorkingDirectory);
     }
 
     juce::String getSongPresetKey() const
@@ -2893,9 +3041,12 @@ private:
 
     void loadMidiFile()
     {
+        const auto defaultDir = workingDirectory.isDirectory()
+            ? workingDirectory
+            : (lastMidiDirectory.isDirectory() ? lastMidiDirectory : juce::File());
         fileChooser = std::make_unique<juce::FileChooser>(
             "Select a MIDI file",
-            lastMidiDirectory.isDirectory() ? lastMidiDirectory : juce::File(),
+            defaultDir,
             "*.mid;*.midi",
             false,
             false,
@@ -3324,8 +3475,10 @@ private:
     StaffDisplayOctaveSelector staff3OctaveSelector;
     juce::ComboBox staff3ClefSelector;
     juce::TextButton transportToggleButton;
+    juce::Label accidentalLabel;
     juce::ComboBox accidentalSelector;
     juce::TextButton accidentalHelpButton;
+    juce::Label aliasLabel;
     juce::ComboBox aliasSelector;
     juce::Label autoChordLabel;
     juce::Label chordComplexityLabel;

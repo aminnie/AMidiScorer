@@ -12,6 +12,7 @@
 #include "../src/app/ScoreRebuildService.h"
 #include "../src/app/KeyOverrideTranspose.h"
 #include "../src/app/ScorePdfExporter.h"
+#include "../src/app/WorkingDirectoryCopy.h"
 #include "../src/notation/ScoreRenderer.h"
 #include "TestFixturePaths.h"
 #include <iostream>
@@ -1168,6 +1169,59 @@ void testKeyOverrideTranspose()
     expectTrue(KeyOverrideTranspose::appliedSemitonesAfterKeyChange(5, 5, 0) == 0,
                "F back to C returns accumulated transpose to zero");
 }
+
+void testWorkingDirectoryCopyHelpers()
+{
+    const auto tempRoot = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("MidiScorerTests")
+        .getChildFile("working_copy_helpers");
+    tempRoot.createDirectory();
+    const auto sourceDir = tempRoot.getChildFile("source");
+    const auto workingDir = tempRoot.getChildFile("working");
+    sourceDir.createDirectory();
+    workingDir.createDirectory();
+
+    const auto sourceFile = sourceDir.getChildFile("Song.mid");
+    sourceFile.replaceWithText("midi");
+
+    expectTrue(WorkingDirectoryCopy::needsCopyToWorkingDirectory(sourceFile, workingDir),
+               "Working copy helper requires copy when source is outside working directory");
+    expectTrue(!WorkingDirectoryCopy::needsCopyToWorkingDirectory(sourceFile, sourceDir),
+               "Working copy helper skips copy when source is already in working directory");
+
+    expectTrue(WorkingDirectoryCopy::normalizeMidiBaseName("  My:Song?.mid  ") == "MySong",
+               "Working copy helper strips extension and invalid filename characters");
+    expectTrue(WorkingDirectoryCopy::normalizeMidiBaseName("   ") == juce::String(),
+               "Working copy helper rejects empty normalized names");
+
+    juce::String destinationError;
+    const auto destination = WorkingDirectoryCopy::buildWorkingDirectoryDestination(
+        workingDir,
+        "Renamed Song",
+        ".mid",
+        destinationError);
+    expectTrue(destination.has_value(), "Working copy helper builds destination for a valid rename");
+    if (destination.has_value())
+        expectTrue(destination->getFileName() == "Renamed Song.mid",
+                   "Working copy helper appends normalized extension to destination filename");
+
+    const auto existing = workingDir.getChildFile("Duplicate.mid");
+    existing.replaceWithText("existing");
+    destinationError.clear();
+    const auto duplicate = WorkingDirectoryCopy::buildWorkingDirectoryDestination(
+        workingDir,
+        "Duplicate",
+        ".mid",
+        destinationError);
+    expectTrue(!duplicate.has_value() && destinationError.isNotEmpty(),
+               "Working copy helper rejects destination collisions");
+
+    sourceFile.deleteFile();
+    existing.deleteFile();
+    workingDir.deleteRecursively();
+    sourceDir.deleteRecursively();
+    tempRoot.deleteRecursively();
+}
 }
 
 int main()
@@ -1200,6 +1254,7 @@ int main()
     testTrackMixMidiSeed();
     testTrackMixSnapshotComparison();
     testKeyOverrideTranspose();
+    testWorkingDirectoryCopyHelpers();
     testCheckedInFixturesLoad();
 
     if (failures == 0)

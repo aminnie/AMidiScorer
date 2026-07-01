@@ -46,8 +46,13 @@ public:
         workingDirectoryInput.onFocusLost = [this] { applyWorkingDirectoryInput(); };
 
         addAndMakeVisible(browseWorkingDirectoryButton);
-        browseWorkingDirectoryButton.setButtonText("Browse...");
+        browseWorkingDirectoryButton.setButtonText("Set Working Directory...");
         browseWorkingDirectoryButton.onClick = [this] { browseWorkingDirectory(); };
+
+        addAndMakeVisible(addWorkingSubfolderButton);
+        addWorkingSubfolderButton.setButtonText("Add Subfolder...");
+        addWorkingSubfolderButton.setTooltip("Create a new folder under the selected working directory.");
+        addWorkingSubfolderButton.onClick = [this] { addWorkingSubfolder(); };
 
         addAndMakeVisible(scoreLightModeToggle);
         scoreLightModeToggle.setButtonText("Light Score");
@@ -95,8 +100,13 @@ public:
         area.removeFromTop(8);
         auto workingRow = area.removeFromTop(24);
         workingDirectoryLabel.setBounds(workingRow.removeFromLeft(116));
-        workingDirectoryInput.setBounds(workingRow.removeFromLeft(540).reduced(4, 0));
-        browseWorkingDirectoryButton.setBounds(workingRow.removeFromLeft(96).reduced(4, 0));
+        workingDirectoryInput.setBounds(workingRow.removeFromLeft(470).reduced(4, 0));
+        browseWorkingDirectoryButton.setBounds(workingRow.removeFromLeft(188).reduced(4, 0));
+
+        area.removeFromTop(6);
+        auto subfolderRow = area.removeFromTop(24);
+        subfolderRow.removeFromLeft(590);
+        addWorkingSubfolderButton.setBounds(subfolderRow.removeFromLeft(188).reduced(4, 0));
 
         area.removeFromTop(8);
         auto toggleRow = area.removeFromTop(24);
@@ -214,14 +224,13 @@ private:
     void browseWorkingDirectory()
     {
         workingDirectoryChooser = std::make_unique<juce::FileChooser>(
-            "Select working directory",
+            "Set working directory",
             juce::File(scorePage.getWorkingDirectoryPath()),
-            "*.mid;*.midi",
+            juce::String(),
             false,
             false,
             this);
         const auto chooserFlags = juce::FileBrowserComponent::openMode
-                                | juce::FileBrowserComponent::canSelectFiles
                                 | juce::FileBrowserComponent::canSelectDirectories;
         workingDirectoryChooser->launchAsync(chooserFlags, [this](const juce::FileChooser& chooser)
         {
@@ -229,15 +238,72 @@ private:
             if (!selected.exists())
                 return;
 
-            if (selected.existsAsFile())
-                selected = selected.getParentDirectory();
-
             if (!selected.isDirectory())
                 return;
 
             workingDirectoryInput.setText(selected.getFullPathName(), juce::dontSendNotification);
             applyWorkingDirectoryInput();
         });
+    }
+
+    static juce::String sanitizeFolderName(const juce::String& input)
+    {
+        auto name = input.trim().removeCharacters("\\/:*?\"<>|");
+        while (name.isNotEmpty() && (name.endsWithChar('.') || name.endsWithChar(' ')))
+            name = name.dropLastCharacters(1);
+        return name.trim();
+    }
+
+    void addWorkingSubfolder()
+    {
+        const juce::File parentDirectory(scorePage.getWorkingDirectoryPath());
+        if (!parentDirectory.isDirectory())
+        {
+            statusLabel.setText("Working directory error: Select a valid working directory first.", juce::dontSendNotification);
+            return;
+        }
+
+        auto* alert = new juce::AlertWindow("Add Subfolder",
+                                            "Create a new folder inside:\n" + parentDirectory.getFullPathName(),
+                                            juce::MessageBoxIconType::QuestionIcon,
+                                            this);
+        alert->addTextEditor("subfolderName", "NewFolder", "Folder name");
+        alert->addButton("Create", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+        juce::Component::SafePointer<PlayerTabComponent> safeThis(this);
+        alert->enterModalState(true, juce::ModalCallbackFunction::create([safeThis, alert, parentDirectory](int result)
+        {
+            if (safeThis == nullptr)
+                return;
+
+            if (result != 1)
+                return;
+
+            const auto requested = alert->getTextEditorContents("subfolderName");
+            const auto folderName = sanitizeFolderName(requested);
+            if (folderName.isEmpty())
+            {
+                safeThis->statusLabel.setText("Working directory error: Enter a valid folder name.", juce::dontSendNotification);
+                return;
+            }
+
+            const juce::File newFolder = parentDirectory.getChildFile(folderName);
+            if (newFolder.exists())
+            {
+                safeThis->statusLabel.setText("Working directory error: That folder already exists.", juce::dontSendNotification);
+                return;
+            }
+
+            if (!newFolder.createDirectory())
+            {
+                safeThis->statusLabel.setText("Working directory error: Could not create folder.", juce::dontSendNotification);
+                return;
+            }
+
+            safeThis->workingDirectoryInput.setText(newFolder.getFullPathName(), juce::dontSendNotification);
+            safeThis->applyWorkingDirectoryInput();
+        }), true);
     }
 
     MainComponent& scorePage;
@@ -253,6 +319,7 @@ private:
     juce::Label workingDirectoryLabel;
     juce::TextEditor workingDirectoryInput;
     juce::TextButton browseWorkingDirectoryButton;
+    juce::TextButton addWorkingSubfolderButton;
     juce::ToggleButton scoreLightModeToggle;
     juce::Label fileLabel;
     juce::Label statusLabel;

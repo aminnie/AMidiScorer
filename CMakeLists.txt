@@ -91,6 +91,7 @@ target_sources(MidiScorer
         src/app/ScoreRebuildService.h
         src/app/TracksTabComponent.h
         src/app/TransportCoordinator.h
+        src/app/WorkingDirectoryCopy.h
         src/midi/MidiProjectLoader.h
         src/midi/TempoMap.h
         src/midi/TrackNoteExtractor.h
@@ -154,6 +155,7 @@ target_sources(MidiScorerTests
         src/notation/ScoreRenderer.h
         src/notation/SimplePdfWriter.h
         src/app/ScorePdfExporter.h
+        src/app/WorkingDirectoryCopy.h
         src/harmony/ChordDetector.h
         src/playback/TrackMixState.h
         src/playback/TrackMixProcessor.h
